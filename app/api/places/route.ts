@@ -40,9 +40,9 @@ function inferNookType(types: string[]): NookType {
 
 function extractNeighborhood(components: AddressComponent[]): string | undefined {
   const match =
-    components.find(c => c.types.includes('neighborhood')) ??
-    components.find(c => c.types.includes('sublocality_level_1')) ??
-    components.find(c => c.types.includes('sublocality'))
+    components.find(c => c.types?.includes('neighborhood')) ??
+    components.find(c => c.types?.includes('sublocality_level_1')) ??
+    components.find(c => c.types?.includes('sublocality'))
   return match?.longText
 }
 
