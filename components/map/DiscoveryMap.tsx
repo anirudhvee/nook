@@ -225,8 +225,14 @@ export function DiscoveryMap() {
 
   return (
     <div className="h-screen w-screen relative overflow-hidden">
-      {/* Full-screen map canvas */}
-      <div ref={mapContainerRef} className="absolute inset-0" />
+      {/* Full-screen map canvas
+          IMPORTANT: the absolute/inset-0 wrapper must NOT be the Mapbox container.
+          Mapbox adds .mapboxgl-map { position: relative } (outside @layer, higher
+          specificity than Tailwind utilities) which would collapse the div to 0 height.
+          The wrapper holds the positioning; the inner div is what Mapbox owns. */}
+      <div className="absolute inset-0">
+        <div ref={mapContainerRef} className="w-full h-full" />
+      </div>
 
       {/* ── nook logo pill — top left ── */}
       <div className="absolute top-4 left-4 z-10">
