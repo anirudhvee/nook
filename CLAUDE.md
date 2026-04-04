@@ -125,57 +125,9 @@ ANTHROPIC_API_KEY=
 
 ---
 
-## Database Schema (Supabase / Postgres)
+## Database
 
-```sql
--- Core nook record
-nooks (
-  id uuid primary key,
-  name text,
-  place_id text,          -- Google Places ID
-  lat float,
-  lng float,
-  address text,
-  type text,              -- 'cafe' | 'library' | 'coworking' | 'other'
-  wifi_quality int,       -- 1-5
-  outlet_availability int, -- 1-5
-  noise_level int,        -- 1-5 (1=silent, 5=loud)
-  laptop_friendly bool,
-  hours jsonb,
-  submitted_by uuid references auth.users,
-  created_at timestamptz default now()
-)
-
--- User passport stamps
-stamps (
-  id uuid primary key,
-  user_id uuid references auth.users,
-  nook_id uuid references nooks,
-  stamped_at timestamptz default now(),
-  note text              -- optional personal note
-)
-
--- Cached reviews from Apify (Google Maps Reviews Scraper)
-reviews (
-  id uuid primary key,
-  nook_id uuid references nooks,
-  source text,           -- 'google'
-  review_text text,
-  rating int,
-  reviewed_at timestamptz,
-  fetched_at timestamptz default now()   -- used for cache TTL
-)
-
--- AI-parsed work signals per nook (computed from reviews, stored to avoid re-parsing)
-work_signals (
-  nook_id uuid primary key references nooks,
-  wifi_signal text,      -- e.g. "Strong WiFi mentioned in 12 reviews"
-  outlet_signal text,
-  noise_signal text,
-  laptop_signal text,
-  parsed_at timestamptz default now()
-)
-```
+Schema lives in `/supabase/migrations/` — always read these files before writing any database-related code. Never infer schema from memory.
 
 ---
 
