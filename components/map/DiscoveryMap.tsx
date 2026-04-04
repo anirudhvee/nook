@@ -9,19 +9,22 @@ import type { NookPlace, FilterType } from '@/types/nook'
 const SF_CENTER: [number, number] = [-122.4194, 37.7749]
 const GEO_TIMEOUT_MS = 8000
 
-// Mapbox source / layer IDs
+// Mapbox source / layer IDs — L_POINTS and L_SELECTED are intentionally absent;
+// individual unclustered points are rendered as mapboxgl.Marker instances instead.
 const SRC = 'nooks'
 const L_CLUSTERS = 'clusters'
 const L_CLUSTER_COUNT = 'cluster-count'
-const L_POINTS = 'unclustered-point'
-const L_SELECTED = 'selected-point'
+
+// Fallback colors if CSS variable is unavailable
+const COLOR_NORMAL  = 'oklch(0.42 0.09 145)'  // --primary light-mode
+const COLOR_SELECTED = 'oklch(0.32 0.09 145)' // darker shade for selected
 
 const FILTERS: { id: FilterType; label: string }[] = [
-  { id: 'all', label: 'all' },
-  { id: 'cafe', label: 'cafés' },
-  { id: 'library', label: 'libraries' },
+  { id: 'all',       label: 'all' },
+  { id: 'cafe',      label: 'cafés' },
+  { id: 'library',   label: 'libraries' },
   { id: 'coworking', label: 'coworking' },
-  { id: 'other', label: 'other' },
+  { id: 'other',     label: 'other' },
 ]
 
 function distanceM([lat1, lng1]: [number, number], [lat2, lng2]: [number, number]): number {
@@ -76,19 +79,29 @@ function buildPopupHtml(props: Record<string, unknown>): string {
   `
 }
 
-export function DiscoveryMap() {
-  const mapContainerRef = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<mapboxgl.Map | null>(null)
-  const mapLoadedRef = useRef(false)
-  const popupRef = useRef<mapboxgl.Popup | null>(null)
-  const userLocRef = useRef<[number, number] | null>(null) // [lng, lat]
-  const nooksRef = useRef<NookPlace[]>([])
+// Update the fill of the default Mapbox Marker SVG path (first path = pin body).
+function setMarkerColor(marker: mapboxgl.Marker, color: string) {
+  const path = marker.getElement().querySelector<SVGPathElement>('path')
+  if (path) path.style.fill = color
+}
 
-  const [nooks, setNooks] = useState<NookPlace[]>([])
+export function DiscoveryMap() {
+  const mapContainerRef   = useRef<HTMLDivElement>(null)
+  const mapRef            = useRef<mapboxgl.Map | null>(null)
+  const mapLoadedRef      = useRef(false)
+  const popupRef          = useRef<mapboxgl.Popup | null>(null)
+  const userLocRef        = useRef<[number, number] | null>(null) // [lng, lat]
+  const nooksRef          = useRef<NookPlace[]>([])
+  const pointMarkersRef   = useRef<Map<string, mapboxgl.Marker>>(new Map())
+  const selectedIdRef     = useRef<string | null>(null)
+  const primaryColorRef   = useRef(COLOR_NORMAL)
+  const darkerPrimaryRef  = useRef(COLOR_SELECTED)
+
+  const [nooks, setNooks]       = useState<NookPlace[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [filter, setFilter] = useState<FilterType>('all')
-  const [userLoc, setUserLoc] = useState<[number, number] | null>(null) // [lng, lat]
-  const [loading, setLoading] = useState(false)
+  const [filter, setFilter]     = useState<FilterType>('all')
+  const [userLoc, setUserLoc]   = useState<[number, number] | null>(null)
+  const [loading, setLoading]   = useState(false)
   const [useMiles, setUseMiles] = useState(() => {
     if (typeof navigator === 'undefined') return false
     return navigator.language === 'en-US'
@@ -110,27 +123,27 @@ export function DiscoveryMap() {
     }
   }, [])
 
-  // ── open popup + fly ──────────────────────────────────────────────────────
-  const openPopup = useCallback(
-    (coords: [number, number], props: Record<string, unknown>) => {
-      const map = mapRef.current
-      if (!map) return
-      popupRef.current?.remove()
-      const popup = new mapboxgl.Popup({
-        offset: [0, -12],
-        closeButton: true,
-        closeOnClick: false,
-        className: 'nook-popup',
-        maxWidth: '260px',
-      })
-        .setLngLat(coords)
-        .setHTML(buildPopupHtml(props))
-        .addTo(map)
-      popup.on('close', () => setSelectedId(null))
-      popupRef.current = popup
-    },
-    []
-  )
+  // ── open popup ────────────────────────────────────────────────────────────
+  const openPopup = useCallback((coords: [number, number], props: Record<string, unknown>) => {
+    const map = mapRef.current
+    if (!map) return
+    popupRef.current?.remove()
+    const popup = new mapboxgl.Popup({
+      offset: [0, -40],  // offset clears the default marker height
+      closeButton: true,
+      closeOnClick: false,
+      className: 'nook-popup',
+      maxWidth: '260px',
+    })
+      .setLngLat(coords)
+      .setHTML(buildPopupHtml(props))
+      .addTo(map)
+    popup.on('close', () => {
+      setSelectedId(null)
+      selectedIdRef.current = null
+    })
+    popupRef.current = popup
+  }, [])
 
   // ── initialise map (runs once) ────────────────────────────────────────────
   useEffect(() => {
@@ -156,7 +169,6 @@ export function DiscoveryMap() {
     })
     map.addControl(geolocate, 'bottom-right')
 
-    // ── geolocation: only fetch AFTER we have a real position ──
     let geoResolved = false
     let fallbackTimer: ReturnType<typeof setTimeout>
 
@@ -169,7 +181,6 @@ export function DiscoveryMap() {
       fetchPlaces(latitude, longitude, 'all')
     })
 
-    // Explicit denial → fall back immediately
     geolocate.on('error', () => {
       if (geoResolved) return
       geoResolved = true
@@ -180,13 +191,19 @@ export function DiscoveryMap() {
     map.on('load', () => {
       mapLoadedRef.current = true
 
-      // ── GeoJSON source with clustering ──
+      // Read --primary from the computed stylesheet at runtime
+      const cssVar = getComputedStyle(document.documentElement)
+        .getPropertyValue('--primary')
+        .trim()
+      if (cssVar) primaryColorRef.current = cssVar
+
+      // ── GeoJSON source (cluster: true handles grouping) ──
       map.addSource(SRC, {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },
         cluster: true,
-        clusterMaxZoom: 14,
-        clusterRadius: 50,
+        clusterMaxZoom: 12,
+        clusterRadius: 40,
       })
 
       // Cluster circles
@@ -196,6 +213,7 @@ export function DiscoveryMap() {
         source: SRC,
         filter: ['has', 'point_count'],
         paint: {
+          // Mapbox GL (WebGL) can't parse oklch() — use hex equivalent of --primary
           'circle-color': '#4a7c3f',
           'circle-radius': ['step', ['get', 'point_count'], 18, 5, 22, 10, 26],
           'circle-stroke-width': 2.5,
@@ -217,40 +235,77 @@ export function DiscoveryMap() {
         paint: { 'text-color': '#fff' },
       })
 
-      // Individual points
-      map.addLayer({
-        id: L_POINTS,
-        type: 'circle',
-        source: SRC,
-        filter: ['!', ['has', 'point_count']],
-        paint: {
-          'circle-color': '#4a7c3f',
-          'circle-radius': 10,
-          'circle-stroke-width': 2.5,
-          'circle-stroke-color': '#fff',
-        },
-      })
+      // ── Sync Marker instances to unclustered points on every render ──
+      // querySourceFeatures returns only visible, tile-loaded features, so we add/
+      // remove markers dynamically as the viewport changes and points un/cluster.
+      const syncPointMarkers = () => {
+        const features = map.querySourceFeatures(SRC, {
+          filter: ['!', ['has', 'point_count']],
+        })
 
-      // Selected point highlight (on top)
-      map.addLayer({
-        id: L_SELECTED,
-        type: 'circle',
-        source: SRC,
-        filter: ['==', ['get', 'id'], ''],
-        paint: {
-          'circle-color': '#2d5016',
-          'circle-radius': 12,
-          'circle-stroke-width': 3,
-          'circle-stroke-color': '#fff',
-        },
-      })
+        // Deduplicate: querySourceFeatures can return the same feature across tiles
+        const visibleIds = new Set<string>()
+        for (const f of features) {
+          const id = String(f.properties?.id ?? '')
+          if (id) visibleIds.add(id)
+        }
 
-      // If nooks arrived before map loaded, populate now
-      if (nooksRef.current.length > 0) {
-        (map.getSource(SRC) as mapboxgl.GeoJSONSource).setData(toGeoJSON(nooksRef.current))
+        // Remove markers that are no longer visible (panned away or now clustered)
+        pointMarkersRef.current.forEach((marker, id) => {
+          if (!visibleIds.has(id)) {
+            marker.remove()
+            pointMarkersRef.current.delete(id)
+          }
+        })
+
+        // Add markers for newly visible points
+        for (const f of features) {
+          const id = String(f.properties?.id ?? '')
+          if (!id || pointMarkersRef.current.has(id)) continue
+
+          const coords = (f.geometry as unknown as { coordinates: [number, number] }).coordinates
+          const props  = f.properties as Record<string, unknown>
+          const isSelected = id === selectedIdRef.current
+          const color  = isSelected ? darkerPrimaryRef.current : primaryColorRef.current
+
+          const marker = new mapboxgl.Marker({ color })
+            .setLngLat(coords)
+            .addTo(map)
+
+          marker.getElement().style.cursor = 'pointer'
+
+          marker.getElement().addEventListener('click', () => {
+            // Deselect previous
+            if (selectedIdRef.current && selectedIdRef.current !== id) {
+              const prev = pointMarkersRef.current.get(selectedIdRef.current)
+              if (prev) setMarkerColor(prev, primaryColorRef.current)
+            }
+
+            selectedIdRef.current = id
+            setSelectedId(id)
+            setMarkerColor(marker, darkerPrimaryRef.current)
+
+            map.flyTo({ center: coords, zoom: 15, speed: 1.8 })
+            openPopup(coords, props)
+          })
+
+          pointMarkersRef.current.set(id, marker)
+        }
       }
 
-      // Click cluster → zoom in
+      // Use mapLoadedRef rather than isSourceLoaded — the latter can return false
+      // during tile fetches on vector sources, causing markers to flicker.
+      // For GeoJSON sources mapLoadedRef is the right gate.
+      map.on('render', () => {
+        if (mapLoadedRef.current) syncPointMarkers()
+      })
+
+      // Populate source if nooks arrived before map loaded
+      if (nooksRef.current.length > 0) {
+        ;(map.getSource(SRC) as mapboxgl.GeoJSONSource).setData(toGeoJSON(nooksRef.current))
+      }
+
+      // Click cluster → zoom to expansion zoom
       map.on('click', L_CLUSTERS, e => {
         const feature = e.features?.[0]
         if (!feature) return
@@ -258,37 +313,16 @@ export function DiscoveryMap() {
         const coords = (feature.geometry as unknown as { coordinates: [number, number] }).coordinates
         ;(map.getSource(SRC) as mapboxgl.GeoJSONSource).getClusterExpansionZoom(
           clusterId,
-          (err, zoom) => {
-            if (err || zoom == null) return
-            map.easeTo({ center: coords, zoom })
-          }
+          (err, zoom) => { if (!err && zoom != null) map.easeTo({ center: coords, zoom }) }
         )
       })
 
-      // Click individual point → popup
-      map.on('click', L_POINTS, e => {
-        const feature = e.features?.[0]
-        if (!feature) return
-        const props = feature.properties as Record<string, unknown>
-        const coords = (feature.geometry as unknown as { coordinates: [number, number] }).coordinates
-        setSelectedId(String(props.id))
-        map.flyTo({ center: coords, zoom: 15, speed: 1.8 })
-        openPopup(coords, props)
-      })
-
-      // Cursor
       map.on('mouseenter', L_CLUSTERS, () => { map.getCanvas().style.cursor = 'pointer' })
       map.on('mouseleave', L_CLUSTERS, () => { map.getCanvas().style.cursor = '' })
-      map.on('mouseenter', L_POINTS, () => { map.getCanvas().style.cursor = 'pointer' })
-      map.on('mouseleave', L_POINTS, () => { map.getCanvas().style.cursor = '' })
 
-      // Trigger geolocation; if it stalls, fall back after GEO_TIMEOUT_MS
       geolocate.trigger()
       fallbackTimer = setTimeout(() => {
-        if (!geoResolved) {
-          geoResolved = true
-          fetchPlaces(SF_CENTER[1], SF_CENTER[0], 'all')
-        }
+        if (!geoResolved) { geoResolved = true; fetchPlaces(SF_CENTER[1], SF_CENTER[0], 'all') }
       }, GEO_TIMEOUT_MS)
     })
 
@@ -296,6 +330,8 @@ export function DiscoveryMap() {
 
     return () => {
       clearTimeout(fallbackTimer)
+      pointMarkersRef.current.forEach(m => m.remove())
+      pointMarkersRef.current.clear()
       map.remove()
       mapRef.current = null
       mapLoadedRef.current = false
@@ -307,17 +343,22 @@ export function DiscoveryMap() {
     nooksRef.current = nooks
     const map = mapRef.current
     if (!map || !mapLoadedRef.current) return
+    // Clear existing point markers so syncPointMarkers rebuilds them fresh
+    pointMarkersRef.current.forEach(m => m.remove())
+    pointMarkersRef.current.clear()
     popupRef.current?.remove()
     popupRef.current = null
     setSelectedId(null)
+    selectedIdRef.current = null
     ;(map.getSource(SRC) as mapboxgl.GeoJSONSource)?.setData(toGeoJSON(nooks))
   }, [nooks])
 
-  // ── highlight selected point ──────────────────────────────────────────────
+  // ── keep selectedIdRef in sync; update marker colors ─────────────────────
   useEffect(() => {
-    const map = mapRef.current
-    if (!map || !mapLoadedRef.current) return
-    map.setFilter(L_SELECTED, ['==', ['get', 'id'], selectedId ?? ''])
+    selectedIdRef.current = selectedId
+    pointMarkersRef.current.forEach((marker, id) => {
+      setMarkerColor(marker, id === selectedId ? darkerPrimaryRef.current : primaryColorRef.current)
+    })
   }, [selectedId])
 
   // ── re-fetch on filter change (skip mount) ────────────────────────────────
@@ -349,8 +390,10 @@ export function DiscoveryMap() {
       </div>
 
       {/* Filter pills — single row, no wrap */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex flex-nowrap gap-1.5 overflow-x-auto"
-           style={{ maxWidth: 'calc(100vw - 360px)' }}>
+      <div
+        className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex flex-nowrap gap-1.5 overflow-x-auto"
+        style={{ maxWidth: 'calc(100vw - 360px)' }}
+      >
         {FILTERS.map(({ id, label }) => (
           <button
             key={id}
@@ -406,7 +449,15 @@ export function DiscoveryMap() {
               <button
                 key={nook.id}
                 onClick={() => {
+                  // Deselect previous marker
+                  if (selectedIdRef.current && selectedIdRef.current !== nook.id) {
+                    const prev = pointMarkersRef.current.get(selectedIdRef.current)
+                    if (prev) setMarkerColor(prev, primaryColorRef.current)
+                  }
+                  selectedIdRef.current = nook.id
                   setSelectedId(nook.id)
+                  const marker = pointMarkersRef.current.get(nook.id)
+                  if (marker) setMarkerColor(marker, darkerPrimaryRef.current)
                   mapRef.current?.flyTo({ center: [nook.lng, nook.lat], zoom: 15, speed: 1.8 })
                   openPopup([nook.lng, nook.lat], {
                     id: nook.id,
