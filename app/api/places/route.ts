@@ -3,6 +3,13 @@ import type { NookPlace, NookType, FilterType } from '@/types/nook'
 
 const PLACES_API_URL = 'https://places.googleapis.com/v1/places:searchNearby'
 
+const EXCLUDED_TYPES = new Set([
+  'convenience_store',
+  'gas_station',
+  'meal_takeaway',
+  'fast_food_restaurant',
+])
+
 const INCLUDED_TYPES: Record<FilterType, string[]> = {
   all: ['cafe', 'library', 'coworking_space'],
   cafe: ['cafe', 'coffee_shop'],
@@ -87,19 +94,21 @@ export async function GET(request: NextRequest) {
 
   const data = (await res.json()) as PlacesApiResponse
 
-  const places: NookPlace[] = (data.places ?? []).map(p => ({
-    id: p.id,
-    name: p.displayName.text,
-    lat: p.location.latitude,
-    lng: p.location.longitude,
-    address: p.formattedAddress,
-    neighborhood: p.addressComponents
-      ? extractNeighborhood(p.addressComponents)
-      : undefined,
-    type: inferNookType(p.types ?? []),
-    rating: p.rating,
-    workSignals: [],
-  }))
+  const places: NookPlace[] = (data.places ?? [])
+    .filter(p => !(p.types ?? []).some(t => EXCLUDED_TYPES.has(t)))
+    .map(p => ({
+      id: p.id,
+      name: p.displayName.text,
+      lat: p.location.latitude,
+      lng: p.location.longitude,
+      address: p.formattedAddress,
+      neighborhood: p.addressComponents
+        ? extractNeighborhood(p.addressComponents)
+        : undefined,
+      type: inferNookType(p.types ?? []),
+      rating: p.rating,
+      workSignals: [],
+    }))
 
   return NextResponse.json({ places })
 }
