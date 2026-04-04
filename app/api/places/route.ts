@@ -6,7 +6,6 @@ const PLACES_API_URL = 'https://places.googleapis.com/v1/places:searchNearby'
 const EXCLUDED_TYPES = new Set([
   'convenience_store',
   'gas_station',
-  'meal_takeaway',
   'fast_food_restaurant',
 ])
 
