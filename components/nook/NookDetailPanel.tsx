@@ -136,7 +136,7 @@ export function NookDetailPanel({ nook, onClose }: Props) {
 
         if (!aiResponse.ok) return
 
-        const aiData = (await aiResponse.json()) as { signals?: string[]; summary?: string }
+        const aiData = (await aiResponse.json()) as { signals?: string[]; summary?: string | null }
         if (!cancelled) {
           setSignals(aiData.signals ?? [])
           setAiSummary(aiData.summary ?? null)
@@ -155,6 +155,7 @@ export function NookDetailPanel({ nook, onClose }: Props) {
 
     return () => {
       cancelled = true
+      setAiSummary(null)
       controller.abort()
     }
   }, [nook.id])
@@ -167,8 +168,12 @@ export function NookDetailPanel({ nook, onClose }: Props) {
   const reviewSummary =
     detail?.reviewSummary?.text?.text ??
     detail?.generativeSummary?.overview?.text ??
+    aiSummary ??
     null
-  const geminiAttribution = detail?.reviewSummary?.disclosureText?.text ?? 'Summarized with Gemini'
+  const summaryAttribution =
+    reviewSummary === aiSummary && aiSummary != null
+      ? 'Summarized with AI'
+      : detail?.reviewSummary?.disclosureText?.text ?? 'Summarized with Gemini'
 
   return (
     <div className="flex h-full flex-col animate-in slide-in-from-left-4 duration-200">
@@ -232,7 +237,7 @@ export function NookDetailPanel({ nook, onClose }: Props) {
           </div>
         )}
 
-        {(fetching || signalsLoading || reviewSummary || aiSummary) && (
+        {(fetching || signalsLoading || reviewSummary) && (
           <div className="rounded-xl border border-border bg-card p-3">
             <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               review summary
@@ -246,12 +251,7 @@ export function NookDetailPanel({ nook, onClose }: Props) {
             ) : reviewSummary ? (
               <>
                 <p className="text-sm leading-6 text-foreground">{reviewSummary}</p>
-                <p className="mt-2 text-[11px] text-muted-foreground">{geminiAttribution}</p>
-              </>
-            ) : aiSummary ? (
-              <>
-                <p className="text-sm leading-6 text-foreground">{aiSummary}</p>
-                <p className="mt-2 text-[11px] text-muted-foreground">Summarized with AI</p>
+                <p className="mt-2 text-[11px] text-muted-foreground">{summaryAttribution}</p>
               </>
             ) : null}
           </div>
