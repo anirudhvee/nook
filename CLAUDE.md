@@ -19,10 +19,10 @@ A web-first app for finding places to work from — cafés, libraries, hotel lob
 | Maps rendering | Mapbox GL JS |
 | Venue data | Google Places API |
 | Review scraping | Apify (Google Maps Reviews Scraper actor) |
-| AI | Anthropic Claude API (claude-sonnet-4-6) |
+| AI | OpenAI API (gpt-4o-mini) |
 | Deployment | Vercel |
 
-> **Note:** Most dependencies (Supabase, Mapbox GL, shadcn/ui, Anthropic SDK, etc.) are not yet installed. The project is currently a bare `create-next-app` scaffold.
+> **Note:** Most dependencies (Supabase, Mapbox GL, shadcn/ui, OpenAI SDK, etc.) are not yet installed. The project is currently a bare `create-next-app` scaffold.
 
 ---
 
@@ -47,7 +47,7 @@ nook/
 │       ├── places/       # Google Places proxy
 │       ├── reviews/      # Apify review fetching + cache layer
 │       ├── nooks/        # Nook CRUD
-│       └── ai/           # Anthropic-powered search/parsing
+│       └── ai/           # OpenAI-powered search/parsing
 ├── components/           # Shared UI components
 │   ├── ui/               # shadcn/ui primitives (do not edit directly)
 │   ├── map/              # Mapbox components
@@ -57,7 +57,7 @@ nook/
 │   ├── mapbox.ts         # Mapbox helpers
 │   ├── places.ts         # Google Places API wrapper
 │   ├── apify.ts          # Apify actor calls (Google Maps Reviews Scraper)
-│   └── anthropic.ts      # Anthropic client
+│   └── openai.ts         # OpenAI client
 ├── types/                # Shared TypeScript types
 └── public/               # Static assets
 ```
@@ -99,7 +99,7 @@ npm run lint   # run ESLint
 - All Supabase calls go through `lib/supabase.ts` — never import the client directly in components.
 - All Google Places calls go through `/api/places` — never expose the API key client-side.
 - All Apify calls go through `/api/reviews` — never call Apify client-side.
-- All Anthropic calls go through `/api/ai` — never call the Anthropic API client-side.
+- All OpenAI calls go through `/api/ai` — never call the OpenAI API client-side.
 - Use **Tailwind utility classes** for styling. No inline styles, no CSS modules.
 - **Tailwind v4** is in use. There is no `tailwind.config.js` — configuration (custom colors, fonts, tokens) lives in `app/globals.css` via `@import "tailwindcss"` and an `@theme {}` block.
 - The `@/` path alias maps to the repo root (e.g. `@/components/ui/button`, `@/lib/supabase`).
@@ -118,7 +118,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 GOOGLE_PLACES_API_KEY=
 APIFY_API_TOKEN=
-ANTHROPIC_API_KEY=
+OPENAI_API_KEY=
 ```
 
 `NEXT_PUBLIC_` variables are safe to expose. All others are server-only.
@@ -139,12 +139,12 @@ Reviews are fetched via Apify's Google Maps Reviews Scraper actor and cached agg
 User opens nook detail →
   Check reviews table for rows where nook_id matches AND fetched_at > now() - interval '7 days'
     Cache hit  → serve from Supabase, free
-    Cache miss → call Apify actor → store in reviews table → pass to Claude for parsing → store in work_signals → serve
+    Cache miss → call Apify actor → store in reviews table → pass to gpt-4o-mini for parsing → store in work_signals → serve
 ```
 
 **Never re-fetch reviews for a place within 7 days.** This keeps Apify usage well within the free tier ($5/month = ~10,000 reviews) during early development.
 
-Claude parses reviews once on ingest using this prompt pattern:
+gpt-4o-mini parses reviews once on ingest using this prompt pattern:
 ```
 From these Google Maps reviews, extract any mentions of:
 WiFi quality, outlet/plug availability, noise level, seating comfort,
@@ -152,7 +152,7 @@ laptop-friendliness, time limits, or being asked to leave.
 Return a JSON object with keys: wifi, outlets, noise, laptopFriendly, notes.
 ```
 
-Parsed signals are stored in work_signals and served directly on subsequent loads — Claude is not called again unless reviews are re-fetched.
+Parsed signals are stored in work_signals and served directly on subsequent loads — gpt-4o-mini is not called again unless reviews are re-fetched.
 
 ---
 
@@ -167,4 +167,4 @@ Parsed signals are stored in work_signals and served directly on subsequent load
 - Google Places `nearbySearch` is the primary endpoint for finding nooks. Filter by `type`: `cafe`, `library`, `lodging`.
 - Apify actor to use: `compass/Google-Maps-Reviews-Scraper`. Pass the Google Maps place URL. Free tier = $5/month ≈ 10,000 reviews.
 - Always check Supabase cache before calling Apify. Cache TTL is 7 days. Never call Apify for a place that has fresh cached reviews.
-- Claude parses reviews once on ingest and stores signals in `work_signals`. Do not re-parse on every page load.
+- gpt-4o-mini parses reviews once on ingest and stores signals in `work_signals`. Do not re-parse on every page load.
