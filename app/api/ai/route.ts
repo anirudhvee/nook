@@ -143,37 +143,26 @@ export async function POST(req: Request) {
   }
 
   const now = Date.now()
+  let needsSummaryBackfill = false
 
   if (existingRow) {
     const ageMs = now - new Date(existingRow.parsed_at).getTime()
     const ttlExpired = ageMs > THIRTY_DAYS_MS
     const emptySignalsRetry = (existingRow.signals ?? []).length === 0 && ageMs > TWENTY_FOUR_HOURS_MS
+    needsSummaryBackfill = !ttlExpired && generateSummary && existingRow.summary == null
 
-    if (!ttlExpired && !emptySignalsRetry) {
-      const signals = existingRow.signals ?? []
-
-      // Return from cache: signals and summary both present
-      if (signals.length > 0 && existingRow.summary) {
-        return NextResponse.json({ signals, summary: existingRow.summary, cached: true })
-      }
-
-      // Partial update: signals exist but summary missing — generate summary only, update row
-      if (signals.length > 0 && !existingRow.summary && generateSummary && reviews.length > 0) {
-        const openAiKey = process.env.OPENAI_API_KEY
-        const summary = openAiKey ? await generateWorkSummary(reviews, openAiKey) : null
-        if (summary) {
-          await supabase.from('work_signals').update({ summary }).eq('nook_id', placeId)
-        }
-        return NextResponse.json({ signals, summary, cached: true })
-      }
-
-      // Signals present, summary not requested or no reviews available
-      return NextResponse.json({ signals, cached: true })
+    if (!ttlExpired && !emptySignalsRetry && !needsSummaryBackfill) {
+      return NextResponse.json({
+        signals: existingRow.signals ?? [],
+        summary: existingRow.summary ?? null,
+        cached: true,
+      })
     }
-    // TTL expired or empty signals retry — fall through to full re-parse
+    // fall through to re-parse or backfill
   }
 
-  // Full re-parse: cache miss, TTL expired, or empty signals retry
+  // Full re-parse or summary backfill: cache miss, TTL expired, empty signals retry,
+  // or a pre-summary row that now needs an OpenAI summary.
   const parsedAt = new Date(now).toISOString()
 
   if (reviews.length === 0) {
@@ -201,6 +190,27 @@ export async function POST(req: Request) {
   const openAiKey = process.env.OPENAI_API_KEY
   if (!openAiKey) {
     return NextResponse.json({ error: 'OpenAI API key not configured' }, { status: 500 })
+  }
+
+  if (existingRow && needsSummaryBackfill) {
+    const signals = existingRow.signals ?? []
+    const summary = await generateWorkSummary(reviews, openAiKey)
+
+    if (summary) {
+      const { error: updateError } = await supabase
+        .from('work_signals')
+        .update({
+          summary,
+          parsed_at: parsedAt,
+        })
+        .eq('nook_id', placeId)
+
+      if (updateError) {
+        return NextResponse.json({ error: updateError.message }, { status: 500 })
+      }
+    }
+
+    return NextResponse.json({ signals, summary, cached: false })
   }
 
   const reviewTranscript = reviews
