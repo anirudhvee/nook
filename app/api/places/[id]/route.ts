@@ -8,6 +8,36 @@ interface PlaceDetailApiResponse {
   addressComponents?: Array<{ longText: string; shortText: string; types: string[] }>
   rating?: number
   types?: string[]
+  reviewSummary?: {
+    text?: { text?: string; languageCode?: string }
+    disclosureText?: { text?: string; languageCode?: string }
+    flagContentUri?: string
+    reviewsUri?: string
+  }
+  generativeSummary?: {
+    overview?: { text?: string; languageCode?: string }
+    description?: { text?: string; languageCode?: string }
+    references?: {
+      reviews?: Array<{
+        review?: string
+        flagContentUri?: string
+      }>
+    }
+    disclaimerText?: { text?: string; languageCode?: string }
+  }
+  reviews?: Array<{
+    name?: string
+    relativePublishTimeDescription?: string
+    rating?: number
+    text?: { text?: string; languageCode?: string }
+    originalText?: { text?: string; languageCode?: string }
+    authorAttribution?: {
+      displayName?: string
+      uri?: string
+      photoUri?: string
+    }
+    publishTime?: string
+  }>
   regularOpeningHours?: {
     openNow?: boolean
     weekdayDescriptions?: string[]
@@ -29,7 +59,7 @@ export async function GET(
     headers: {
       'X-Goog-Api-Key': apiKey,
       'X-Goog-FieldMask':
-        'displayName,formattedAddress,addressComponents,rating,types,regularOpeningHours',
+        'displayName,formattedAddress,addressComponents,rating,types,regularOpeningHours,reviewSummary,generativeSummary,reviews',
     },
     next: { revalidate: 3600 },
   })

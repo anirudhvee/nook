@@ -1,33 +1,40 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import {
-  ArrowLeft,
-  Wifi,
-  Plug,
-  Volume2,
-  Laptop,
-  Star,
-  MapPin,
-  Clock,
-  BookmarkPlus,
-} from 'lucide-react'
+import { ArrowLeft, Star, MapPin, Clock, BookmarkPlus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { NookPlace, NookType } from '@/types/nook'
 
+interface PlaceReview {
+  rating?: number
+  text?: {
+    text?: string
+  }
+  originalText?: {
+    text?: string
+  }
+}
+
 interface PlaceDetail {
   rating?: number
+  reviewSummary?: {
+    text?: {
+      text?: string
+    }
+    disclosureText?: {
+      text?: string
+    }
+  }
+  generativeSummary?: {
+    overview?: {
+      text?: string
+    }
+  }
+  reviews?: PlaceReview[]
   regularOpeningHours?: {
     openNow?: boolean
     weekdayDescriptions?: string[]
   }
-}
-
-interface WorkSignals {
-  wifi_signal: 'good' | 'weak' | 'none' | null
-  outlet_signal: 'plenty' | 'few' | 'none' | null
-  noise_signal: 'quiet' | 'moderate' | 'loud' | null
-  laptop_signal: 'yes' | 'no' | null
 }
 
 const TYPE_LABELS: Record<NookType, string> = {
@@ -37,20 +44,8 @@ const TYPE_LABELS: Record<NookType, string> = {
   other: 'other',
 }
 
-const SIGNAL_CARDS = [
-  { icon: Wifi, label: 'WiFi', key: 'wifi_signal' },
-  { icon: Plug, label: 'Outlets', key: 'outlet_signal' },
-  { icon: Volume2, label: 'Noise', key: 'noise_signal' },
-  { icon: Laptop, label: 'Laptop-friendly', key: 'laptop_signal' },
-] as const
-
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError'
-}
-
-function formatSignal(value: WorkSignals[keyof WorkSignals]): string {
-  if (!value) return '—'
-  return value.replace(/_/g, ' ')
 }
 
 // weekdayDescriptions is Mon=0 .. Sun=6; JS getDay() is 0=Sun..6=Sat
@@ -58,6 +53,20 @@ function todayHours(descriptions: string[]): string {
   const idx = (new Date().getDay() + 6) % 7
   const desc = descriptions[idx] ?? ''
   return desc.replace(/^[^:]+:\s*/, '')
+}
+
+function toAiReviews(reviews: PlaceReview[] | undefined): Array<{ text: string; rating: number | null }> {
+  return (reviews ?? []).slice(0, 5).flatMap(review => {
+    const text = review.text?.text?.trim() || review.originalText?.text?.trim() || ''
+    if (!text) return []
+
+    return [
+      {
+        text,
+        rating: review.rating ?? null,
+      },
+    ]
+  })
 }
 
 interface Props {
@@ -68,76 +77,63 @@ interface Props {
 export function NookDetailPanel({ nook, onClose }: Props) {
   const [detail, setDetail] = useState<PlaceDetail | null>(null)
   const [fetching, setFetching] = useState(true)
-  const [signals, setSignals] = useState<WorkSignals | null>(null)
+  const [signals, setSignals] = useState<string[]>([])
   const [signalsLoading, setSignalsLoading] = useState(true)
 
   useEffect(() => {
     let cancelled = false
     const controller = new AbortController()
 
-    async function loadDetail() {
+    async function loadPanelData() {
       if (!cancelled) {
         setDetail(null)
+        setSignals([])
         setFetching(true)
-      }
-
-      try {
-        const response = await fetch(`/api/places/${encodeURIComponent(nook.id)}`, {
-          signal: controller.signal,
-        })
-
-        if (!response.ok) return
-
-        const data = (await response.json()) as PlaceDetail
-        if (!cancelled) {
-          setDetail(data)
-        }
-      } catch (error) {
-        if (isAbortError(error)) return
-      } finally {
-        if (!cancelled) {
-          setFetching(false)
-        }
-      }
-    }
-
-    async function loadSignals() {
-      if (!cancelled) {
-        setSignals(null)
         setSignalsLoading(true)
       }
 
       try {
-        const reviewsResponse = await fetch(`/api/reviews/${encodeURIComponent(nook.id)}`, {
+        const detailResponse = await fetch(`/api/places/${encodeURIComponent(nook.id)}`, {
           signal: controller.signal,
         })
-        if (!reviewsResponse.ok) return
+
+        if (!detailResponse.ok) return
+
+        const detailData = (await detailResponse.json()) as PlaceDetail
+        if (!cancelled) {
+          setDetail(detailData)
+          setFetching(false)
+        }
 
         const aiResponse = await fetch('/api/ai', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ place_id: nook.id }),
+          body: JSON.stringify({
+            place_id: nook.id,
+            reviews: toAiReviews(detailData.reviews),
+          }),
           signal: controller.signal,
         })
+
         if (!aiResponse.ok) return
 
-        const data = (await aiResponse.json()) as { signals?: WorkSignals | null }
+        const aiData = (await aiResponse.json()) as { signals?: string[] }
         if (!cancelled) {
-          setSignals(data.signals ?? null)
+          setSignals(aiData.signals ?? [])
         }
       } catch (error) {
         if (isAbortError(error)) return
       } finally {
         if (!cancelled) {
+          setFetching(false)
           setSignalsLoading(false)
         }
       }
     }
 
-    void loadDetail()
-    void loadSignals()
+    void loadPanelData()
 
     return () => {
       cancelled = true
@@ -150,6 +146,11 @@ export function NookDetailPanel({ nook, onClose }: Props) {
   const hours = detail?.regularOpeningHours?.weekdayDescriptions
     ? todayHours(detail.regularOpeningHours.weekdayDescriptions)
     : null
+  const reviewSummary =
+    detail?.reviewSummary?.text?.text ??
+    detail?.generativeSummary?.overview?.text ??
+    null
+  const summaryAttribution = detail?.reviewSummary?.disclosureText?.text ?? 'Summarized with Gemini'
 
   return (
     <div className="flex h-full flex-col animate-in slide-in-from-left-4 duration-200">
@@ -213,31 +214,51 @@ export function NookDetailPanel({ nook, onClose }: Props) {
           </div>
         )}
 
-        <div>
+        <div className="rounded-xl border border-border bg-card p-3">
           <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            work signals
+            review summary
           </p>
-          <div className="grid grid-cols-2 gap-2">
-            {SIGNAL_CARDS.map(({ icon: Icon, label, key }) => (
-              <div
-                key={label}
-                className="flex items-center gap-2 rounded-xl border border-border bg-card p-2.5"
-              >
-                <Icon className="h-4 w-4 shrink-0 text-primary" />
-                <div className="min-w-0">
-                  <p className="mb-0.5 text-[10px] leading-none text-muted-foreground">{label}</p>
-                  {signalsLoading ? (
-                    <div className="h-3 w-16 animate-pulse rounded bg-muted" />
-                  ) : (
-                    <p className="text-xs font-medium capitalize">
-                      {formatSignal(signals?.[key] ?? null)}
-                    </p>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+          {fetching ? (
+            <div className="space-y-2">
+              <div className="h-3 w-full animate-pulse rounded bg-muted" />
+              <div className="h-3 w-5/6 animate-pulse rounded bg-muted" />
+              <div className="h-3 w-24 animate-pulse rounded bg-muted" />
+            </div>
+          ) : reviewSummary ? (
+            <>
+              <p className="text-sm leading-6 text-foreground">{reviewSummary}</p>
+              <p className="mt-2 text-[11px] text-muted-foreground">{summaryAttribution}</p>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">No review summary available.</p>
+          )}
         </div>
+
+        {(signalsLoading || signals.length > 0) && (
+          <div>
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              work signals
+            </p>
+            {signalsLoading ? (
+              <div className="flex flex-wrap gap-2">
+                <div className="h-7 w-24 animate-pulse rounded-full bg-muted" />
+                <div className="h-7 w-28 animate-pulse rounded-full bg-muted" />
+                <div className="h-7 w-16 animate-pulse rounded-full bg-muted" />
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {signals.map(signal => (
+                  <span
+                    key={signal}
+                    className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-medium text-primary"
+                  >
+                    {signal}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         <button
           disabled
