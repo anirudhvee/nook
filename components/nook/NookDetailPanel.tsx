@@ -237,7 +237,7 @@ export function NookDetailPanel({ nook, onClose }: Props) {
             <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               review summary
             </p>
-            {fetching || (!reviewSummary && signalsLoading) ? (
+            {fetching || signalsLoading ? (
               <div className="space-y-2">
                 <div className="h-3 w-full animate-pulse rounded bg-muted" />
                 <div className="h-3 w-5/6 animate-pulse rounded bg-muted" />

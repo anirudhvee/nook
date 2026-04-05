@@ -141,10 +141,8 @@ export async function POST(req: Request) {
   if (existingSignals) {
     if (generateSummary && reviews.length > 0) {
       const openAiKey = process.env.OPENAI_API_KEY
-      if (openAiKey) {
-        const summary = await generateWorkSummary(reviews, openAiKey)
-        return NextResponse.json({ signals: existingSignals.signals ?? [], summary, cached: true })
-      }
+      const summary = openAiKey ? await generateWorkSummary(reviews, openAiKey) : null
+      return NextResponse.json({ signals: existingSignals.signals ?? [], summary, cached: true })
     }
     return NextResponse.json({ signals: existingSignals.signals ?? [], cached: true })
   }
