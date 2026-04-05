@@ -88,6 +88,7 @@ export function NookDetailPanel({ nook, onClose }: Props) {
   const [fetching, setFetching] = useState(true)
   const [signals, setSignals] = useState<string[]>([])
   const [signalsLoading, setSignalsLoading] = useState(true)
+  const [aiSummary, setAiSummary] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -97,6 +98,7 @@ export function NookDetailPanel({ nook, onClose }: Props) {
       if (!cancelled) {
         setDetail(null)
         setSignals([])
+        setAiSummary(null)
         setFetching(true)
         setSignalsLoading(true)
       }
@@ -114,6 +116,11 @@ export function NookDetailPanel({ nook, onClose }: Props) {
           setFetching(false)
         }
 
+        const aiReviews = toAiReviews(detailData.reviews)
+        const googleSummary =
+          detailData.reviewSummary?.text?.text ?? detailData.generativeSummary?.overview?.text ?? null
+        const needsAiSummary = !googleSummary && aiReviews.length > 0
+
         const aiResponse = await fetch('/api/ai', {
           method: 'POST',
           headers: {
@@ -121,16 +128,18 @@ export function NookDetailPanel({ nook, onClose }: Props) {
           },
           body: JSON.stringify({
             place_id: nook.id,
-            reviews: toAiReviews(detailData.reviews),
+            reviews: aiReviews,
+            generateSummary: needsAiSummary,
           }),
           signal: controller.signal,
         })
 
         if (!aiResponse.ok) return
 
-        const aiData = (await aiResponse.json()) as { signals?: string[] }
+        const aiData = (await aiResponse.json()) as { signals?: string[]; summary?: string }
         if (!cancelled) {
           setSignals(aiData.signals ?? [])
+          setAiSummary(aiData.summary ?? null)
         }
       } catch (error) {
         if (isAbortError(error)) return
@@ -159,7 +168,7 @@ export function NookDetailPanel({ nook, onClose }: Props) {
     detail?.reviewSummary?.text?.text ??
     detail?.generativeSummary?.overview?.text ??
     null
-  const summaryAttribution = detail?.reviewSummary?.disclosureText?.text ?? 'Summarized with Gemini'
+  const geminiAttribution = detail?.reviewSummary?.disclosureText?.text ?? 'Summarized with Gemini'
 
   return (
     <div className="flex h-full flex-col animate-in slide-in-from-left-4 duration-200">
@@ -223,25 +232,30 @@ export function NookDetailPanel({ nook, onClose }: Props) {
           </div>
         )}
 
-        <div className="rounded-xl border border-border bg-card p-3">
-          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            review summary
-          </p>
-          {fetching ? (
-            <div className="space-y-2">
-              <div className="h-3 w-full animate-pulse rounded bg-muted" />
-              <div className="h-3 w-5/6 animate-pulse rounded bg-muted" />
-              <div className="h-3 w-24 animate-pulse rounded bg-muted" />
-            </div>
-          ) : reviewSummary ? (
-            <>
-              <p className="text-sm leading-6 text-foreground">{reviewSummary}</p>
-              <p className="mt-2 text-[11px] text-muted-foreground">{summaryAttribution}</p>
-            </>
-          ) : (
-            <p className="text-sm text-muted-foreground">No review summary available.</p>
-          )}
-        </div>
+        {(fetching || signalsLoading || reviewSummary || aiSummary) && (
+          <div className="rounded-xl border border-border bg-card p-3">
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              review summary
+            </p>
+            {fetching || (!reviewSummary && signalsLoading) ? (
+              <div className="space-y-2">
+                <div className="h-3 w-full animate-pulse rounded bg-muted" />
+                <div className="h-3 w-5/6 animate-pulse rounded bg-muted" />
+                <div className="h-3 w-24 animate-pulse rounded bg-muted" />
+              </div>
+            ) : reviewSummary ? (
+              <>
+                <p className="text-sm leading-6 text-foreground">{reviewSummary}</p>
+                <p className="mt-2 text-[11px] text-muted-foreground">{geminiAttribution}</p>
+              </>
+            ) : aiSummary ? (
+              <>
+                <p className="text-sm leading-6 text-foreground">{aiSummary}</p>
+                <p className="mt-2 text-[11px] text-muted-foreground">Summarized with AI</p>
+              </>
+            ) : null}
+          </div>
+        )}
 
         {(signalsLoading || signals.length > 0) && (
           <div>

@@ -73,11 +73,48 @@ function normalizeReviews(reviews: unknown): ReviewInput[] {
   })
 }
 
+async function generateWorkSummary(reviews: ReviewInput[], openAiKey: string): Promise<string | null> {
+  const reviewTranscript = reviews
+    .map((review, index) => {
+      const rating = review.rating != null ? `${review.rating}/5` : 'unknown'
+      return `Review ${index + 1}\nRating: ${rating}\nText: ${review.text}`
+    })
+    .join('\n\n---\n\n')
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${openAiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      temperature: 0.3,
+      max_tokens: 120,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'Write a 2-sentence work-friendliness summary based on the provided reviews. Start the first sentence with "People say". Focus on wifi, noise level, seating comfort, and overall atmosphere for working. Be factual and concise.',
+        },
+        {
+          role: 'user',
+          content: reviewTranscript,
+        },
+      ],
+    }),
+  })
+
+  if (!response.ok) return null
+  const completion = (await response.json()) as OpenAIChatResponse
+  return completion.choices?.[0]?.message?.content?.trim() ?? null
+}
+
 export async function POST(req: Request) {
-  let body: { place_id?: string; reviews?: unknown } | null = null
+  let body: { place_id?: string; reviews?: unknown; generateSummary?: boolean } | null = null
 
   try {
-    body = (await req.json()) as { place_id?: string; reviews?: unknown }
+    body = (await req.json()) as { place_id?: string; reviews?: unknown; generateSummary?: boolean }
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
@@ -86,6 +123,9 @@ export async function POST(req: Request) {
   if (!placeId) {
     return NextResponse.json({ error: 'Missing place_id' }, { status: 400 })
   }
+
+  const generateSummary = body?.generateSummary === true
+  const reviews = normalizeReviews(body?.reviews)
 
   const supabase = await createServiceClient()
   const { data: existingSignals, error: existingSignalsError } = await supabase
@@ -99,10 +139,16 @@ export async function POST(req: Request) {
   }
 
   if (existingSignals) {
+    if (generateSummary && reviews.length > 0) {
+      const openAiKey = process.env.OPENAI_API_KEY
+      if (openAiKey) {
+        const summary = await generateWorkSummary(reviews, openAiKey)
+        return NextResponse.json({ signals: existingSignals.signals ?? [], summary, cached: true })
+      }
+    }
     return NextResponse.json({ signals: existingSignals.signals ?? [], cached: true })
   }
 
-  const reviews = normalizeReviews(body?.reviews)
   const parsedAt = new Date().toISOString()
 
   if (reviews.length === 0) {
@@ -204,22 +250,25 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'OpenAI returned invalid JSON' }, { status: 502 })
   }
 
-  const { data: storedSignals, error: storeError } = await supabase
-    .from('work_signals')
-    .upsert(
-      {
-        nook_id: placeId,
-        signals: parsedSignals,
-        parsed_at: parsedAt,
-      },
-      { onConflict: 'nook_id' }
-    )
-    .select('nook_id, signals, parsed_at')
-    .single()
+  const [storedResult, summary] = await Promise.all([
+    supabase
+      .from('work_signals')
+      .upsert(
+        {
+          nook_id: placeId,
+          signals: parsedSignals,
+          parsed_at: parsedAt,
+        },
+        { onConflict: 'nook_id' }
+      )
+      .select('nook_id, signals, parsed_at')
+      .single(),
+    generateSummary ? generateWorkSummary(reviews, openAiKey) : Promise.resolve(null),
+  ])
 
-  if (storeError) {
-    return NextResponse.json({ error: storeError.message }, { status: 500 })
+  if (storedResult.error) {
+    return NextResponse.json({ error: storedResult.error.message }, { status: 500 })
   }
 
-  return NextResponse.json({ signals: storedSignals.signals ?? [], cached: false })
+  return NextResponse.json({ signals: storedResult.data.signals ?? [], summary, cached: false })
 }
