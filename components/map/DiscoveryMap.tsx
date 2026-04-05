@@ -2,6 +2,7 @@
 
 import { useRef, useEffect, useState, useCallback } from 'react'
 import mapboxgl from 'mapbox-gl'
+import { LogoWordmark } from '@/components/LogoWordmark'
 import { cn } from '@/lib/utils'
 import { AuthControls } from '@/components/auth/AuthControls'
 import type { NookPlace, FilterType } from '@/types/nook'
@@ -341,9 +342,8 @@ export function DiscoveryMap() {
 
       {/* Logo pill */}
       <div className="absolute top-4 left-4 z-10">
-        <div className="flex items-center gap-1.5 bg-white/90 backdrop-blur-sm px-4 py-2 rounded-full shadow border border-white/50">
-          <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
-          <span className="font-semibold text-[15px] tracking-tight">nook</span>
+        <div className="bg-white/90 backdrop-blur-sm px-4 py-2 rounded-full shadow border border-white/50">
+          <LogoWordmark className="text-[1.4rem]" />
         </div>
       </div>
 
