@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ArrowLeft, Star, MapPin, Clock, BookmarkPlus } from 'lucide-react'
+import { ArrowLeft, Star, MapPin, Clock, BookmarkPlus, Wifi, Plug, Volume2, Laptop } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { NookPlace, NookType } from '@/types/nook'
 
@@ -42,6 +42,15 @@ const TYPE_LABELS: Record<NookType, string> = {
   library: 'library',
   coworking: 'coworking',
   other: 'other',
+}
+
+function signalIcon(signal: string) {
+  const s = signal.toLowerCase()
+  if (s.includes('wifi')) return <Wifi className="h-3.5 w-3.5 shrink-0" />
+  if (s.includes('outlet')) return <Plug className="h-3.5 w-3.5 shrink-0" />
+  if (s.includes('loud') || s.includes('quiet') || s.includes('noise')) return <Volume2 className="h-3.5 w-3.5 shrink-0" />
+  if (s.includes('laptop')) return <Laptop className="h-3.5 w-3.5 shrink-0" />
+  return null
 }
 
 function isAbortError(error: unknown): boolean {
@@ -250,8 +259,9 @@ export function NookDetailPanel({ nook, onClose }: Props) {
                 {signals.map(signal => (
                   <span
                     key={signal}
-                    className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-medium text-primary"
+                    className="flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-medium text-primary"
                   >
+                    {signalIcon(signal)}
                     {signal}
                   </span>
                 ))}
