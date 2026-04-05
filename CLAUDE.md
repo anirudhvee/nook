@@ -18,11 +18,11 @@ A web-first app for finding places to work from — cafés, libraries, hotel lob
 | Database + Auth | Supabase (Postgres + Supabase Auth) |
 | Maps rendering | Mapbox GL JS |
 | Venue data | Google Places API |
-| Review scraping | Apify (Google Maps Reviews Scraper actor) |
+| Review data | Google Places API (New) — `reviewSummary`, `generativeSummary`, `reviews` |
 | AI | OpenAI API (gpt-4o-mini) |
 | Deployment | Vercel |
 
-> **Note:** Most dependencies (Supabase, Mapbox GL, shadcn/ui, OpenAI SDK, etc.) are not yet installed. The project is currently a bare `create-next-app` scaffold.
+> **Note on Apify:** Apify integration was built and is preserved on the `feature/apify-reviews` branch, but is **not active on `main`**. Reviews are sourced directly from the Google Places API (New).
 
 ---
 
@@ -35,8 +35,6 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 ## Project Structure
 
-Target structure (not yet fully scaffolded — only `app/page.tsx`, `app/layout.tsx`, and `app/globals.css` exist currently):
-
 ```
 nook/
 ├── app/                  # Next.js App Router pages
@@ -44,21 +42,21 @@ nook/
 │   ├── nook/[id]/        # Individual nook detail page
 │   ├── passport/         # User's visited nooks (stamp collection)
 │   └── api/              # API routes
-│       ├── places/       # Google Places proxy
-│       ├── reviews/      # Apify review fetching + cache layer
+│       ├── places/       # Google Places (New) proxy — nearby search
+│       ├── places/[id]/  # Google Places (New) detail — reviews, hours, summary
 │       ├── nooks/        # Nook CRUD
-│       └── ai/           # OpenAI-powered search/parsing
+│       ├── reviews/      # (stub — unused on main; active on feature/apify-reviews)
+│       └── ai/           # OpenAI work-signal parsing + Supabase cache
 ├── components/           # Shared UI components
 │   ├── ui/               # shadcn/ui primitives (do not edit directly)
 │   ├── map/              # Mapbox components
-│   └── nook/             # Nook-specific components (NookCard, NookDetail, etc.)
+│   └── nook/             # Nook-specific components (NookCard, NookDetailPanel, etc.)
 ├── lib/                  # Utilities and clients
-│   ├── supabase.ts       # Supabase client
+│   ├── supabase.ts       # Supabase client (browser, server, service-role)
 │   ├── mapbox.ts         # Mapbox helpers
-│   ├── places.ts         # Google Places API wrapper
-│   ├── apify.ts          # Apify actor calls (Google Maps Reviews Scraper)
-│   └── openai.ts         # OpenAI client
+│   └── utils.ts          # cn() and other shared utilities
 ├── types/                # Shared TypeScript types
+│   └── nook.ts           # NookPlace, NookType, FilterType
 └── public/               # Static assets
 ```
 
@@ -97,8 +95,7 @@ npm run lint   # run ESLint
 
 - Use **server components by default**. Only add `"use client"` when interactivity is required.
 - All Supabase calls go through `lib/supabase.ts` — never import the client directly in components.
-- All Google Places calls go through `/api/places` — never expose the API key client-side.
-- All Apify calls go through `/api/reviews` — never call Apify client-side.
+- All Google Places calls go through `/api/places` or `/api/places/[id]` — never expose the API key client-side.
 - All OpenAI calls go through `/api/ai` — never call the OpenAI API client-side.
 - Use **Tailwind utility classes** for styling. No inline styles, no CSS modules.
 - **Tailwind v4** is in use. There is no `tailwind.config.js` — configuration (custom colors, fonts, tokens) lives in `app/globals.css` via `@import "tailwindcss"` and an `@theme {}` block.
@@ -117,9 +114,10 @@ NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 GOOGLE_PLACES_API_KEY=
-APIFY_API_TOKEN=
 OPENAI_API_KEY=
 ```
+
+`APIFY_API_TOKEN` is only needed on the `feature/apify-reviews` branch — not required on `main`.
 
 `NEXT_PUBLIC_` variables are safe to expose. All others are server-only.
 
@@ -133,26 +131,43 @@ Schema lives in `/supabase/migrations/` — always read these files before writi
 
 ## Review Data Strategy
 
-Reviews are fetched via Apify's Google Maps Reviews Scraper actor and cached aggressively in Supabase. The flow is:
+Reviews come directly from the **Google Places API (New)**. The detail endpoint (`/api/places/[id]`) requests these fields:
+
+- `reviewSummary` — AI-generated summary text with attribution (shown in the panel)
+- `generativeSummary` — fallback overview if `reviewSummary` is absent
+- `reviews` — up to 5 individual reviews passed to OpenAI for work-signal extraction
+
+**Work signals flow:**
 
 ```
 User opens nook detail →
-  Check reviews table for rows where nook_id matches AND fetched_at > now() - interval '7 days'
-    Cache hit  → serve from Supabase, free
-    Cache miss → call Apify actor → store in reviews table → pass to gpt-4o-mini for parsing → store in work_signals → serve
+  NookDetailPanel fetches /api/places/[id]  →  renders review summary + hours
+  NookDetailPanel POSTs /api/ai with { place_id, reviews (5 max) }
+    Check work_signals table for existing row (nook_id = place_id)
+      Cache hit  → return signals array, skip OpenAI
+      Cache miss → call gpt-4o-mini → upsert into work_signals → return signals
 ```
 
-**Never re-fetch reviews for a place within 7 days.** This keeps Apify usage well within the free tier ($5/month = ~10,000 reviews) during early development.
+gpt-4o-mini receives up to 5 reviews and returns a constrained enum array using structured outputs (`json_schema`). Allowed signal values:
 
-gpt-4o-mini parses reviews once on ingest using this prompt pattern:
 ```
-From these Google Maps reviews, extract any mentions of:
-WiFi quality, outlet/plug availability, noise level, seating comfort,
-laptop-friendliness, time limits, or being asked to leave.
-Return a JSON object with keys: wifi, outlets, noise, laptopFriendly, notes.
+good wifi | weak wifi | no wifi |
+plenty of outlets | few outlets | no outlets |
+quiet | moderate noise | loud |
+laptop-friendly | not laptop-friendly
 ```
 
-Parsed signals are stored in work_signals and served directly on subsequent loads — gpt-4o-mini is not called again unless reviews are re-fetched.
+Parsed signals are stored in `work_signals.signals` (jsonb) and served from cache on subsequent loads — gpt-4o-mini is never called again for the same `place_id`.
+
+**Active Supabase tables on `main`:**
+
+| Table | Purpose |
+|---|---|
+| `work_signals` | Cached OpenAI signals per place (`nook_id text PK`, `signals jsonb`, `parsed_at`) |
+| `stamps` | Passport stamps — user ↔ nook visits (future feature) |
+| `nooks` | Submitted venue records (schema exists, not yet wired to UI) |
+
+> The `reviews` table existed for Apify caching and has been truncated; it is effectively unused on `main`. Its schema is preserved in migrations for reference.
 
 ---
 
@@ -164,7 +179,7 @@ Parsed signals are stored in work_signals and served directly on subsequent load
 - **Never hardcode API keys.** Always use environment variables.
 - **Use `/compact`** if the session context gets long. Start a new session between features.
 - The Mapbox style should use warm earth tones — reference the Mapbox Studio "Outdoors" style as a base.
-- Google Places `nearbySearch` is the primary endpoint for finding nooks. Filter by `type`: `cafe`, `library`, `lodging`.
-- Apify actor to use: `compass/Google-Maps-Reviews-Scraper`. Pass the Google Maps place URL. Free tier = $5/month ≈ 10,000 reviews.
-- Always check Supabase cache before calling Apify. Cache TTL is 7 days. Never call Apify for a place that has fresh cached reviews.
+- Google Places API (New) `nearbySearch` is the primary endpoint for finding nooks. Filter by `type`: `cafe`, `library`, `lodging`.
+- Google Places API (New) detail endpoint fields in use: `displayName`, `formattedAddress`, `addressComponents`, `rating`, `types`, `regularOpeningHours`, `reviewSummary`, `generativeSummary`, `reviews`.
 - gpt-4o-mini parses reviews once on ingest and stores signals in `work_signals`. Do not re-parse on every page load.
+- Always check `work_signals` cache before calling OpenAI. Cache is permanent (no TTL) — a cached row is never re-parsed.
