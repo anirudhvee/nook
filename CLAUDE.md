@@ -142,10 +142,16 @@ Reviews come directly from the **Google Places API (New)**. The detail endpoint 
 ```
 User opens nook detail →
   NookDetailPanel fetches /api/places/[id]  →  renders review summary + hours
-  NookDetailPanel POSTs /api/ai with { place_id, reviews (5 max) }
+  NookDetailPanel POSTs /api/ai with { place_id, reviews (5 max), generateSummary? }
     Check work_signals table for existing row (nook_id = place_id)
-      Cache hit  → return signals array, skip OpenAI
-      Cache miss → call gpt-4o-mini → upsert into work_signals → return signals
+      Cache hit, fresh →
+        signals + summary both present  → return both immediately
+        signals present, summary null, generateSummary true  → generate summary, update row, return
+        signals present, no summary needed  → return signals
+      Cache hit, stale (TTL or empty retry, see below)  → full re-parse
+      Cache miss  → full re-parse
+    Full re-parse: call gpt-4o-mini for signals + (if generateSummary) summary in parallel
+      → single upsert into work_signals with both values
 ```
 
 gpt-4o-mini receives up to 5 reviews and returns a constrained enum array using structured outputs (`json_schema`). Allowed signal values:
@@ -157,13 +163,19 @@ quiet | moderate noise | loud |
 laptop-friendly | not laptop-friendly
 ```
 
-Parsed signals are stored in `work_signals.signals` (jsonb) and served from cache on subsequent loads — gpt-4o-mini is never called again for the same `place_id`.
+**work_signals cache behaviour:**
+
+- Signals (`jsonb`) and summary (`text`) are stored together in a single row per `place_id`.
+- **Full re-parse TTL:** 30 days from `parsed_at` — both signals and summary are re-generated together via a single upsert.
+- **Empty signals retry:** if `signals` is `[]` and `parsed_at` is older than 24 hours, trigger a full re-parse (in case the first parse had no reviews available).
+- **Partial update:** if signals are present but `summary` is `null` and `generateSummary: true` is passed, generate the summary only and update the row — no signals re-parse.
+- Summary is never generated independently of a request; it is always demand-driven and cached after first generation.
 
 **Active Supabase tables on `main`:**
 
 | Table | Purpose |
 |---|---|
-| `work_signals` | Cached OpenAI signals per place (`nook_id text PK`, `signals jsonb`, `parsed_at`) |
+| `work_signals` | Cached OpenAI signals + summary per place (`nook_id text PK`, `signals jsonb`, `summary text`, `parsed_at`) |
 | `stamps` | Passport stamps — user ↔ nook visits (future feature) |
 | `nooks` | Submitted venue records (schema exists, not yet wired to UI) |
 
@@ -181,5 +193,5 @@ Parsed signals are stored in `work_signals.signals` (jsonb) and served from cach
 - The Mapbox style should use warm earth tones — reference the Mapbox Studio "Outdoors" style as a base.
 - Google Places API (New) `nearbySearch` is the primary endpoint for finding nooks. Filter by `type`: `cafe`, `library`, `lodging`.
 - Google Places API (New) detail endpoint fields in use: `displayName`, `formattedAddress`, `addressComponents`, `rating`, `types`, `regularOpeningHours`, `reviewSummary`, `generativeSummary`, `reviews`.
-- gpt-4o-mini parses reviews once on ingest and stores signals in `work_signals`. Do not re-parse on every page load.
-- Always check `work_signals` cache before calling OpenAI. Cache is permanent (no TTL) — a cached row is never re-parsed.
+- gpt-4o-mini parses reviews and stores signals + summary in `work_signals`. Do not re-parse on every page load.
+- Always check `work_signals` cache before calling OpenAI. See cache behaviour above for TTL and retry rules.

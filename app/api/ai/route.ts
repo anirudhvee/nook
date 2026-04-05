@@ -25,6 +25,7 @@ interface ReviewInput {
 interface WorkSignalsRow {
   nook_id: string
   signals: AllowedSignal[]
+  summary: string | null
   parsed_at: string
 }
 
@@ -35,6 +36,9 @@ interface OpenAIChatResponse {
     }
   }>
 }
+
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
+const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000
 
 function isValidSignalArray(value: unknown): value is { signals: AllowedSignal[] } {
   if (!value || typeof value !== 'object') return false
@@ -95,7 +99,7 @@ async function generateWorkSummary(reviews: ReviewInput[], openAiKey: string): P
         {
           role: 'system',
           content:
-            'Write a 2-sentence work-friendliness summary based on the provided reviews. Start the first sentence with "People say". Focus on wifi, noise level, seating comfort, and overall atmosphere for working. Be factual and concise.',
+            'Write exactly 2 sentences about this place for remote workers based only on what reviewers explicitly mention. Start with "People say". Never mention missing information or what reviewers did not say.',
         },
         {
           role: 'user',
@@ -128,46 +132,70 @@ export async function POST(req: Request) {
   const reviews = normalizeReviews(body?.reviews)
 
   const supabase = await createServiceClient()
-  const { data: existingSignals, error: existingSignalsError } = await supabase
+  const { data: existingRow, error: existingRowError } = await supabase
     .from('work_signals')
-    .select('nook_id, signals, parsed_at')
+    .select('nook_id, signals, summary, parsed_at')
     .eq('nook_id', placeId)
     .maybeSingle()
 
-  if (existingSignalsError) {
-    return NextResponse.json({ error: existingSignalsError.message }, { status: 500 })
+  if (existingRowError) {
+    return NextResponse.json({ error: existingRowError.message }, { status: 500 })
   }
 
-  if (existingSignals) {
-    if (generateSummary && reviews.length > 0) {
-      const openAiKey = process.env.OPENAI_API_KEY
-      const summary = openAiKey ? await generateWorkSummary(reviews, openAiKey) : null
-      return NextResponse.json({ signals: existingSignals.signals ?? [], summary, cached: true })
+  const now = Date.now()
+
+  if (existingRow) {
+    const ageMs = now - new Date(existingRow.parsed_at).getTime()
+    const ttlExpired = ageMs > THIRTY_DAYS_MS
+    const emptySignalsRetry = (existingRow.signals ?? []).length === 0 && ageMs > TWENTY_FOUR_HOURS_MS
+
+    if (!ttlExpired && !emptySignalsRetry) {
+      const signals = existingRow.signals ?? []
+
+      // Return from cache: signals and summary both present
+      if (signals.length > 0 && existingRow.summary) {
+        return NextResponse.json({ signals, summary: existingRow.summary, cached: true })
+      }
+
+      // Partial update: signals exist but summary missing — generate summary only, update row
+      if (signals.length > 0 && !existingRow.summary && generateSummary && reviews.length > 0) {
+        const openAiKey = process.env.OPENAI_API_KEY
+        const summary = openAiKey ? await generateWorkSummary(reviews, openAiKey) : null
+        if (summary) {
+          await supabase.from('work_signals').update({ summary }).eq('nook_id', placeId)
+        }
+        return NextResponse.json({ signals, summary, cached: true })
+      }
+
+      // Signals present, summary not requested or no reviews available
+      return NextResponse.json({ signals, cached: true })
     }
-    return NextResponse.json({ signals: existingSignals.signals ?? [], cached: true })
+    // TTL expired or empty signals retry — fall through to full re-parse
   }
 
-  const parsedAt = new Date().toISOString()
+  // Full re-parse: cache miss, TTL expired, or empty signals retry
+  const parsedAt = new Date(now).toISOString()
 
   if (reviews.length === 0) {
-    const { data: storedSignals, error: storeError } = await supabase
+    const { data: storedRow, error: storeError } = await supabase
       .from('work_signals')
       .upsert(
         {
           nook_id: placeId,
           signals: [],
+          summary: null,
           parsed_at: parsedAt,
         },
         { onConflict: 'nook_id' }
       )
-      .select('nook_id, signals, parsed_at')
+      .select('nook_id, signals, summary, parsed_at')
       .single()
 
     if (storeError) {
       return NextResponse.json({ error: storeError.message }, { status: 500 })
     }
 
-    return NextResponse.json({ signals: storedSignals.signals ?? [], cached: false })
+    return NextResponse.json({ signals: storedRow.signals ?? [], cached: false })
   }
 
   const openAiKey = process.env.OPENAI_API_KEY
@@ -182,48 +210,52 @@ export async function POST(req: Request) {
     })
     .join('\n\n---\n\n')
 
-  const openAiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${openAiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      temperature: 0,
-      messages: [
-        {
-          role: 'system',
-          content: `Extract only work signals that are explicitly mentioned in the reviews. Return JSON only. Omit anything uncertain, implied, or unsupported. Allowed signal strings: ${ALLOWED_SIGNALS.join(', ')}.`,
-        },
-        {
-          role: 'user',
-          content: `For place_id "${placeId}", extract explicit work signals from these reviews.\n\n${reviewTranscript}`,
-        },
-      ],
-      response_format: {
-        type: 'json_schema',
-        json_schema: {
-          name: 'work_signal_pills',
-          strict: true,
-          schema: {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              signals: {
-                type: 'array',
-                items: {
-                  type: 'string',
-                  enum: ALLOWED_SIGNALS,
+  // Fire signals and summary OpenAI calls in parallel
+  const [openAiResponse, summary] = await Promise.all([
+    fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${openAiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        temperature: 0,
+        messages: [
+          {
+            role: 'system',
+            content: `Extract only work signals that are explicitly mentioned in the reviews. Return JSON only. Omit anything uncertain, implied, or unsupported. Allowed signal strings: ${ALLOWED_SIGNALS.join(', ')}.`,
+          },
+          {
+            role: 'user',
+            content: `For place_id "${placeId}", extract explicit work signals from these reviews.\n\n${reviewTranscript}`,
+          },
+        ],
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'work_signal_pills',
+            strict: true,
+            schema: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                signals: {
+                  type: 'array',
+                  items: {
+                    type: 'string',
+                    enum: ALLOWED_SIGNALS,
+                  },
                 },
               },
+              required: ['signals'],
             },
-            required: ['signals'],
           },
         },
-      },
+      }),
     }),
-  })
+    generateSummary ? generateWorkSummary(reviews, openAiKey) : Promise.resolve(null),
+  ])
 
   if (!openAiResponse.ok) {
     const text = await openAiResponse.text()
@@ -248,25 +280,23 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'OpenAI returned invalid JSON' }, { status: 502 })
   }
 
-  const [storedResult, summary] = await Promise.all([
-    supabase
-      .from('work_signals')
-      .upsert(
-        {
-          nook_id: placeId,
-          signals: parsedSignals,
-          parsed_at: parsedAt,
-        },
-        { onConflict: 'nook_id' }
-      )
-      .select('nook_id, signals, parsed_at')
-      .single(),
-    generateSummary ? generateWorkSummary(reviews, openAiKey) : Promise.resolve(null),
-  ])
+  const { data: storedRow, error: storeError } = await supabase
+    .from('work_signals')
+    .upsert(
+      {
+        nook_id: placeId,
+        signals: parsedSignals,
+        summary: summary ?? null,
+        parsed_at: parsedAt,
+      },
+      { onConflict: 'nook_id' }
+    )
+    .select('nook_id, signals, summary, parsed_at')
+    .single()
 
-  if (storedResult.error) {
-    return NextResponse.json({ error: storedResult.error.message }, { status: 500 })
+  if (storeError) {
+    return NextResponse.json({ error: storeError.message }, { status: 500 })
   }
 
-  return NextResponse.json({ signals: storedResult.data.signals ?? [], summary, cached: false })
+  return NextResponse.json({ signals: storedRow.signals ?? [], summary, cached: false })
 }
