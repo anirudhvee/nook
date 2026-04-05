@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { MapPin } from "lucide-react";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { AuthControls } from "@/components/auth/AuthControls";
 
 export function Navbar() {
   return (
@@ -11,15 +11,7 @@ export function Navbar() {
         <MapPin className="h-5 w-5 text-primary" />
         <span className="font-semibold text-lg tracking-tight">nook</span>
       </Link>
-      <div className="flex items-center gap-3">
-        <Link
-          href="/passport"
-          className={buttonVariants({ variant: "ghost", size: "sm" })}
-        >
-          my passport
-        </Link>
-        <Button size="sm">sign in</Button>
-      </div>
+      <AuthControls variant="navbar" />
     </nav>
   );
 }

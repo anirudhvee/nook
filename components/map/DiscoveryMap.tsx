@@ -2,8 +2,8 @@
 
 import { useRef, useEffect, useState, useCallback } from 'react'
 import mapboxgl from 'mapbox-gl'
-import Link from 'next/link'
 import { cn } from '@/lib/utils'
+import { AuthControls } from '@/components/auth/AuthControls'
 import type { NookPlace, FilterType } from '@/types/nook'
 import { NookDetailPanel } from '@/components/nook/NookDetailPanel'
 
@@ -369,16 +369,8 @@ export function DiscoveryMap() {
       </div>
 
       {/* Nav pills */}
-      <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
-        <Link
-          href="/passport"
-          className="px-4 py-2 rounded-full text-sm font-medium bg-white/90 backdrop-blur-sm border border-white/50 shadow hover:bg-white transition-colors whitespace-nowrap"
-        >
-          my passport
-        </Link>
-        <button className="px-4 py-2 rounded-full text-sm font-semibold bg-primary text-primary-foreground shadow hover:bg-primary/90 transition-colors whitespace-nowrap">
-          sign in
-        </button>
+      <div className="absolute top-4 right-4 z-10">
+        <AuthControls variant="map" />
       </div>
 
       {/* Left panel — sidebar or detail */}
