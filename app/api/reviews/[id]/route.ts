@@ -1,8 +1,14 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 
-const APIFY_API_URL =
-  'https://api.apify.com/v2/acts/compass~google-maps-reviews-scraper/run-sync-get-dataset-items'
+const APIFY_RUN_API_URL = 'https://api.apify.com/v2/acts/compass~google-maps-reviews-scraper/runs'
+const APIFY_RUN_STATUS_API_URL = 'https://api.apify.com/v2/actor-runs'
+const APIFY_DATASET_API_URL = 'https://api.apify.com/v2/datasets'
+const APIFY_FILTER_QUERY =
+  'wifi OR laptop OR work OR outlet OR plug OR quiet OR noise OR seating OR crowded'
+const APIFY_MAX_REVIEWS = 50
+const APIFY_TIMEOUT_MS = 60_000
+const APIFY_POLL_INTERVAL_MS = 2_000
 const REVIEWS_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
 interface ReviewRow {
@@ -13,6 +19,19 @@ interface ReviewRow {
   rating: number | null
   reviewed_at: string | null
   fetched_at: string
+}
+
+interface ApifyRun {
+  id: string
+  status: string
+  defaultDatasetId?: string | null
+}
+
+interface ApifyRunResponse {
+  data?: ApifyRun
+  error?: {
+    message?: string
+  }
 }
 
 interface ApifyReviewItem {
@@ -60,6 +79,41 @@ function getLatestBatch(rows: ReviewRow[]): ReviewRow[] {
   return latestFetchedAt ? rows.filter(row => row.fetched_at === latestFetchedAt) : []
 }
 
+async function pollApifyRun(runId: string, apifyToken: string): Promise<ApifyRun> {
+  const deadline = Date.now() + APIFY_TIMEOUT_MS
+
+  while (Date.now() < deadline) {
+    const response = await fetch(
+      `${APIFY_RUN_STATUS_API_URL}/${encodeURIComponent(runId)}?waitForFinish=${APIFY_POLL_INTERVAL_MS / 1000}`,
+      {
+        headers: {
+          Authorization: `Bearer ${apifyToken}`,
+        },
+      }
+    )
+
+    const payload = (await response.json()) as ApifyRunResponse
+    if (!response.ok) {
+      return Promise.reject(new Error(payload.error?.message ?? 'Failed to poll Apify run'))
+    }
+
+    const run = payload.data
+    if (!run) {
+      return Promise.reject(new Error('Apify returned an empty run status payload'))
+    }
+
+    if (run.status === 'SUCCEEDED') {
+      return run
+    }
+
+    if (['FAILED', 'ABORTED', 'TIMED-OUT'].includes(run.status)) {
+      return Promise.reject(new Error(`Apify run finished with status ${run.status}`))
+    }
+  }
+
+  return Promise.reject(new Error('Apify run timed out after 60 seconds'))
+}
+
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -96,25 +150,63 @@ export async function GET(
     }
   }
 
-  const apifyResponse = await fetch(`${APIFY_API_URL}?token=${encodeURIComponent(apifyToken)}`, {
+  const apifyRunResponse = await fetch(`${APIFY_RUN_API_URL}?timeout=60`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      Authorization: `Bearer ${apifyToken}`,
     },
     body: JSON.stringify({
       placeIds: [placeId],
+      reviewsFilterString: APIFY_FILTER_QUERY,
+      maxReviews: APIFY_MAX_REVIEWS,
       reviewsOrigin: 'google',
       personalData: false,
       language: 'en',
     }),
   })
 
-  if (!apifyResponse.ok) {
-    const text = await apifyResponse.text()
-    return NextResponse.json({ error: text }, { status: apifyResponse.status })
+  const apifyRunPayload = (await apifyRunResponse.json()) as ApifyRunResponse
+  if (!apifyRunResponse.ok) {
+    return NextResponse.json(
+      { error: apifyRunPayload.error?.message ?? 'Failed to start Apify run' },
+      { status: apifyRunResponse.status }
+    )
   }
 
-  const rawApifyItems = (await apifyResponse.json()) as unknown
+  const startedRun = apifyRunPayload.data
+  if (!startedRun?.id) {
+    return NextResponse.json({ error: 'Apify did not return a run ID' }, { status: 502 })
+  }
+
+  let completedRun: ApifyRun
+  try {
+    completedRun = await pollApifyRun(startedRun.id, apifyToken)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Apify polling failed'
+    return NextResponse.json({ error: message }, { status: 504 })
+  }
+
+  const datasetId = completedRun.defaultDatasetId
+  if (!datasetId) {
+    return NextResponse.json({ error: 'Apify run did not produce a dataset' }, { status: 502 })
+  }
+
+  const apifyItemsResponse = await fetch(
+    `${APIFY_DATASET_API_URL}/${encodeURIComponent(datasetId)}/items?format=json&clean=true`,
+    {
+      headers: {
+        Authorization: `Bearer ${apifyToken}`,
+      },
+    }
+  )
+
+  if (!apifyItemsResponse.ok) {
+    const text = await apifyItemsResponse.text()
+    return NextResponse.json({ error: text }, { status: apifyItemsResponse.status })
+  }
+
+  const rawApifyItems = (await apifyItemsResponse.json()) as unknown
   if (!Array.isArray(rawApifyItems)) {
     return NextResponse.json({ error: 'Apify returned an unexpected payload' }, { status: 502 })
   }
