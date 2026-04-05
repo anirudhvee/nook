@@ -15,7 +15,7 @@ A web-first app for finding places to work from — cafés, libraries, hotel lob
 | Framework | Next.js 16 (App Router) |
 | Language | TypeScript |
 | Styling | Tailwind CSS + shadcn/ui |
-| Database + Auth | Supabase (Postgres + Supabase Auth) |
+| Database + Auth | Supabase (Postgres + Supabase Auth — Google OAuth + email magic link, no passwords) |
 | Maps rendering | Mapbox GL JS |
 | Venue data | Google Places API |
 | Review data | Google Places API (New) — `reviewSummary`, `generativeSummary`, `reviews` |
@@ -120,6 +120,15 @@ OPENAI_API_KEY=
 `APIFY_API_TOKEN` is only needed on the `feature/apify-reviews` branch — not required on `main`.
 
 `NEXT_PUBLIC_` variables are safe to expose. All others are server-only.
+
+---
+
+## Auth
+
+- **Auth:** Supabase Auth — Google OAuth + email magic link (no passwords)
+- **Shared UI:** `components/auth/AuthControls.tsx` — modal, avatar, sign out, passport gating
+- **Callback:** `app/auth/callback/route.ts`
+- **Session refresh:** `proxy.ts`
 
 ---
 
