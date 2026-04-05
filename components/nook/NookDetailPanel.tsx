@@ -1,7 +1,17 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ArrowLeft, Wifi, Plug, Volume2, Laptop, Star, MapPin, Clock, BookmarkPlus } from 'lucide-react'
+import {
+  ArrowLeft,
+  Wifi,
+  Plug,
+  Volume2,
+  Laptop,
+  Star,
+  MapPin,
+  Clock,
+  BookmarkPlus,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { NookPlace, NookType } from '@/types/nook'
 
@@ -13,11 +23,34 @@ interface PlaceDetail {
   }
 }
 
+interface WorkSignals {
+  wifi_signal: 'good' | 'weak' | 'none' | null
+  outlet_signal: 'plenty' | 'few' | 'none' | null
+  noise_signal: 'quiet' | 'moderate' | 'loud' | null
+  laptop_signal: 'yes' | 'no' | null
+}
+
 const TYPE_LABELS: Record<NookType, string> = {
   cafe: 'café',
   library: 'library',
   coworking: 'coworking',
   other: 'other',
+}
+
+const SIGNAL_CARDS = [
+  { icon: Wifi, label: 'WiFi', key: 'wifi_signal' },
+  { icon: Plug, label: 'Outlets', key: 'outlet_signal' },
+  { icon: Volume2, label: 'Noise', key: 'noise_signal' },
+  { icon: Laptop, label: 'Laptop-friendly', key: 'laptop_signal' },
+] as const
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError'
+}
+
+function formatSignal(value: WorkSignals[keyof WorkSignals]): string {
+  if (!value) return '—'
+  return value.replace(/_/g, ' ')
 }
 
 // weekdayDescriptions is Mon=0 .. Sun=6; JS getDay() is 0=Sun..6=Sat
@@ -35,17 +68,81 @@ interface Props {
 export function NookDetailPanel({ nook, onClose }: Props) {
   const [detail, setDetail] = useState<PlaceDetail | null>(null)
   const [fetching, setFetching] = useState(true)
+  const [signals, setSignals] = useState<WorkSignals | null>(null)
+  const [signalsLoading, setSignalsLoading] = useState(true)
 
   useEffect(() => {
-    setDetail(null)
-    setFetching(true)
-    fetch(`/api/places/${encodeURIComponent(nook.id)}`)
-      .then(r => (r.ok ? r.json() : null))
-      .then((data: PlaceDetail | null) => {
-        setDetail(data)
-        setFetching(false)
-      })
-      .catch(() => setFetching(false))
+    let cancelled = false
+    const controller = new AbortController()
+
+    async function loadDetail() {
+      if (!cancelled) {
+        setDetail(null)
+        setFetching(true)
+      }
+
+      try {
+        const response = await fetch(`/api/places/${encodeURIComponent(nook.id)}`, {
+          signal: controller.signal,
+        })
+
+        if (!response.ok) return
+
+        const data = (await response.json()) as PlaceDetail
+        if (!cancelled) {
+          setDetail(data)
+        }
+      } catch (error) {
+        if (isAbortError(error)) return
+      } finally {
+        if (!cancelled) {
+          setFetching(false)
+        }
+      }
+    }
+
+    async function loadSignals() {
+      if (!cancelled) {
+        setSignals(null)
+        setSignalsLoading(true)
+      }
+
+      try {
+        const reviewsResponse = await fetch(`/api/reviews/${encodeURIComponent(nook.id)}`, {
+          signal: controller.signal,
+        })
+        if (!reviewsResponse.ok) return
+
+        const aiResponse = await fetch('/api/ai', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ place_id: nook.id }),
+          signal: controller.signal,
+        })
+        if (!aiResponse.ok) return
+
+        const data = (await aiResponse.json()) as { signals?: WorkSignals | null }
+        if (!cancelled) {
+          setSignals(data.signals ?? null)
+        }
+      } catch (error) {
+        if (isAbortError(error)) return
+      } finally {
+        if (!cancelled) {
+          setSignalsLoading(false)
+        }
+      }
+    }
+
+    void loadDetail()
+    void loadSignals()
+
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
   }, [nook.id])
 
   const rating = detail?.rating ?? nook.rating
@@ -55,12 +152,11 @@ export function NookDetailPanel({ nook, onClose }: Props) {
     : null
 
   return (
-    <div className="flex flex-col h-full animate-in slide-in-from-left-4 duration-200">
-      {/* Header */}
-      <div className="px-4 pt-4 pb-3 shrink-0 border-b border-border">
+    <div className="flex h-full flex-col animate-in slide-in-from-left-4 duration-200">
+      <div className="shrink-0 border-b border-border px-4 pt-4 pb-3">
         <button
           onClick={onClose}
-          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors mb-3"
+          className="mb-3 flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
           back to list
@@ -68,14 +164,14 @@ export function NookDetailPanel({ nook, onClose }: Props) {
 
         {fetching ? (
           <div className="space-y-2">
-            <div className="h-5 w-3/4 rounded bg-muted animate-pulse" />
-            <div className="h-3.5 w-1/2 rounded bg-muted animate-pulse" />
+            <div className="h-5 w-3/4 animate-pulse rounded bg-muted" />
+            <div className="h-3.5 w-1/2 animate-pulse rounded bg-muted" />
           </div>
         ) : (
           <>
-            <h2 className="font-semibold text-base leading-snug">{nook.name}</h2>
-            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/20">
+            <h2 className="text-base font-semibold leading-snug">{nook.name}</h2>
+            <div className="mt-1.5 flex flex-wrap items-center gap-2">
+              <span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
                 {TYPE_LABELS[nook.type]}
               </span>
               {nook.neighborhood && (
@@ -92,24 +188,21 @@ export function NookDetailPanel({ nook, onClose }: Props) {
         )}
       </div>
 
-      {/* Scrollable body */}
-      <div className="flex-1 overflow-y-auto px-4 pb-4 pt-3 space-y-4">
-        {/* Address */}
-        <div className="flex gap-2.5 items-start">
-          <MapPin className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+      <div className="flex-1 space-y-4 overflow-y-auto px-4 pt-3 pb-4">
+        <div className="flex items-start gap-2.5">
+          <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
           <span className="text-sm leading-snug">{nook.address}</span>
         </div>
 
-        {/* Hours */}
         {(hours !== null || openNow != null) && (
-          <div className="flex gap-2.5 items-center">
-            <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
-            <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2.5">
+            <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <div className="flex flex-wrap items-center gap-2">
               {openNow != null && (
                 <span
                   className={cn(
-                    'text-xs font-semibold px-1.5 py-0.5 rounded',
-                    openNow ? 'text-green-700 bg-green-100' : 'text-red-700 bg-red-100'
+                    'rounded px-1.5 py-0.5 text-xs font-semibold',
+                    openNow ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
                   )}
                 >
                   {openNow ? 'open' : 'closed'}
@@ -120,38 +213,35 @@ export function NookDetailPanel({ nook, onClose }: Props) {
           </div>
         )}
 
-        {/* Work signals */}
         <div>
-          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             work signals
           </p>
           <div className="grid grid-cols-2 gap-2">
-            {(
-              [
-                { icon: Wifi, label: 'WiFi' },
-                { icon: Plug, label: 'Outlets' },
-                { icon: Volume2, label: 'Noise' },
-                { icon: Laptop, label: 'Laptop-friendly' },
-              ] as const
-            ).map(({ icon: Icon, label }) => (
+            {SIGNAL_CARDS.map(({ icon: Icon, label, key }) => (
               <div
                 key={label}
-                className="flex items-center gap-2 p-2.5 rounded-xl border border-border bg-card"
+                className="flex items-center gap-2 rounded-xl border border-border bg-card p-2.5"
               >
-                <Icon className="h-4 w-4 text-primary shrink-0" />
+                <Icon className="h-4 w-4 shrink-0 text-primary" />
                 <div className="min-w-0">
-                  <p className="text-[10px] text-muted-foreground leading-none mb-0.5">{label}</p>
-                  <p className="text-xs font-medium text-muted-foreground">—</p>
+                  <p className="mb-0.5 text-[10px] leading-none text-muted-foreground">{label}</p>
+                  {signalsLoading ? (
+                    <div className="h-3 w-16 animate-pulse rounded bg-muted" />
+                  ) : (
+                    <p className="text-xs font-medium capitalize">
+                      {formatSignal(signals?.[key] ?? null)}
+                    </p>
+                  )}
                 </div>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Passport stamp */}
         <button
           disabled
-          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary/10 border border-primary/20 text-primary text-sm font-medium opacity-50 cursor-not-allowed"
+          className="flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-primary/20 bg-primary/10 py-2.5 text-sm font-medium text-primary opacity-50"
         >
           <BookmarkPlus className="h-4 w-4" />
           stamp my passport
