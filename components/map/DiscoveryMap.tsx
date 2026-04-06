@@ -3,11 +3,11 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import mapboxgl from 'mapbox-gl'
-import { LogoWordmark } from '@/components/LogoWordmark'
 import { cn } from '@/lib/utils'
 import { AuthControls } from '@/components/auth/AuthControls'
 import type { NookPlace, NookType, FilterType } from '@/types/nook'
 import { NookDetailPanel } from '@/components/nook/NookDetailPanel'
+import { SearchPill } from '@/components/map/SearchPill'
 
 const SF_CENTER: [number, number] = [-122.4194, 37.7749]
 const GEO_TIMEOUT_MS = 8000
@@ -88,6 +88,7 @@ export function DiscoveryMap() {
   const [filter, setFilter]         = useState<FilterType>('all')
   const [userLoc, setUserLoc]       = useState<[number, number] | null>(null)
   const [loading, setLoading]       = useState(false)
+  const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [useMiles, setUseMiles]     = useState(() => {
     if (typeof navigator === 'undefined') return false
     return navigator.language === 'en-US'
@@ -135,6 +136,14 @@ export function DiscoveryMap() {
     selectedIdRef.current = null
     window.history.pushState(null, '', '/')
   }, [])
+
+  // ── search pill: fly to selected location, update origin, refetch ────────
+  const handleLocationSelect = useCallback((lng: number, lat: number) => {
+    mapRef.current?.flyTo({ center: [lng, lat], zoom: 14, duration: 1000 })
+    userLocRef.current = [lng, lat]
+    setUserLoc([lng, lat])
+    fetchPlaces(lat, lng, filter)
+  }, [fetchPlaces, filter])
 
   // ── fetch a nook by ID and open its panel (for URL-restore of off-list nooks) ──
   const fetchAndOpenNook = useCallback(async (id: string) => {
@@ -399,11 +408,13 @@ export function DiscoveryMap() {
         <div ref={mapContainerRef} className="w-full h-full" />
       </div>
 
-      {/* Logo pill */}
-      <div className="absolute top-4 left-4 z-10">
-        <div className="bg-white/90 backdrop-blur-sm px-4 py-2 rounded-full shadow border border-white/50">
-          <LogoWordmark className="text-[1.4rem]" />
-        </div>
+      {/* Logo + search pill */}
+      <div className="absolute top-4 left-4 z-20">
+        <SearchPill
+          onSearchOpen={() => setIsSearchOpen(true)}
+          onSearchClose={() => setIsSearchOpen(false)}
+          onLocationSelect={handleLocationSelect}
+        />
       </div>
 
       {/* Filter pills */}
@@ -433,7 +444,13 @@ export function DiscoveryMap() {
       </div>
 
       {/* Left panel — sidebar or detail */}
-      <div className="absolute top-[72px] left-4 bottom-4 z-10 w-[300px] flex flex-col rounded-2xl bg-background/95 backdrop-blur-sm shadow-lg border border-border overflow-hidden">
+      <div
+        className="absolute top-[72px] left-4 bottom-4 z-10 w-[300px] flex flex-col rounded-2xl bg-background/95 backdrop-blur-sm shadow-lg border border-border overflow-hidden"
+        style={{
+          transform: isSearchOpen ? 'translateY(calc(100% - 36px))' : 'translateY(0)',
+          transition: 'transform 300ms ease',
+        }}
+      >
         {detailNook ? (
           <NookDetailPanel nook={detailNook} onClose={handlePanelClose} />
         ) : (
