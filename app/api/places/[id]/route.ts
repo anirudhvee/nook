@@ -4,6 +4,7 @@ const PLACES_DETAIL_URL = 'https://places.googleapis.com/v1/places'
 
 interface PlaceDetailApiResponse {
   displayName?: { text: string; languageCode: string }
+  location?: { latitude: number; longitude: number }
   formattedAddress?: string
   addressComponents?: Array<{ longText: string; shortText: string; types: string[] }>
   rating?: number
@@ -59,7 +60,7 @@ export async function GET(
     headers: {
       'X-Goog-Api-Key': apiKey,
       'X-Goog-FieldMask':
-        'displayName,formattedAddress,addressComponents,rating,types,regularOpeningHours,reviewSummary,generativeSummary,reviews',
+        'displayName,formattedAddress,addressComponents,location,rating,types,regularOpeningHours,reviewSummary,generativeSummary,reviews',
     },
     next: { revalidate: 3600 },
   })

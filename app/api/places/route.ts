@@ -31,6 +31,7 @@ interface PlacesApiPlace {
   location: { latitude: number; longitude: number }
   rating?: number
   types?: string[]
+  businessStatus?: string
 }
 
 interface PlacesApiResponse {
@@ -81,7 +82,7 @@ export async function GET(request: NextRequest) {
       'Content-Type': 'application/json',
       'X-Goog-Api-Key': apiKey,
       'X-Goog-FieldMask':
-        'places.id,places.displayName,places.formattedAddress,places.addressComponents,places.location,places.rating,places.types',
+        'places.id,places.displayName,places.formattedAddress,places.addressComponents,places.location,places.rating,places.types,places.businessStatus',
     },
     body: JSON.stringify(body),
   })
@@ -94,6 +95,7 @@ export async function GET(request: NextRequest) {
   const data = (await res.json()) as PlacesApiResponse
 
   const places: NookPlace[] = (data.places ?? [])
+    .filter(p => p.businessStatus !== 'CLOSED_TEMPORARILY')
     .filter(p => !(p.types ?? []).some(t => EXCLUDED_TYPES.has(t)))
     .map(p => ({
       id: p.id,

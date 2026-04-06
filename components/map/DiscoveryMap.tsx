@@ -1,11 +1,12 @@
 'use client'
 
 import { useRef, useEffect, useState, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import mapboxgl from 'mapbox-gl'
 import { LogoWordmark } from '@/components/LogoWordmark'
 import { cn } from '@/lib/utils'
 import { AuthControls } from '@/components/auth/AuthControls'
-import type { NookPlace, FilterType } from '@/types/nook'
+import type { NookPlace, NookType, FilterType } from '@/types/nook'
 import { NookDetailPanel } from '@/components/nook/NookDetailPanel'
 
 const SF_CENTER: [number, number] = [-122.4194, 37.7749]
@@ -15,8 +16,8 @@ const SRC = 'nooks'
 const L_CLUSTERS = 'clusters'
 const L_CLUSTER_COUNT = 'cluster-count'
 
-const COLOR_NORMAL  = 'oklch(0.42 0.09 145)'
-const COLOR_SELECTED = 'oklch(0.32 0.09 145)'
+const COLOR_NORMAL   = 'oklch(0.42 0.09 145)'
+const COLOR_SELECTED = '#c4623a'
 
 const FILTERS: { id: FilterType; label: string }[] = [
   { id: 'all',       label: 'all' },
@@ -69,6 +70,7 @@ function setMarkerColor(marker: mapboxgl.Marker, color: string) {
 }
 
 export function DiscoveryMap() {
+  const searchParams     = useSearchParams()
   const mapContainerRef  = useRef<HTMLDivElement>(null)
   const mapRef           = useRef<mapboxgl.Map | null>(null)
   const mapLoadedRef     = useRef(false)
@@ -78,6 +80,7 @@ export function DiscoveryMap() {
   const selectedIdRef    = useRef<string | null>(null)
   const primaryColorRef  = useRef(COLOR_NORMAL)
   const darkerPrimaryRef = useRef(COLOR_SELECTED)
+  const pendingNookIdRef = useRef<string | null>(searchParams.get('nook'))
 
   const [nooks, setNooks]           = useState<NookPlace[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -118,7 +121,7 @@ export function DiscoveryMap() {
     if (marker) setMarkerColor(marker, darkerPrimaryRef.current)
     mapRef.current?.flyTo({ center: [nook.lng, nook.lat], zoom: 15, speed: 1.8 })
     setDetailNook(nook)
-    window.history.pushState(null, '', `/nook/${encodeURIComponent(nook.id)}`)
+    window.history.pushState(null, '', `/?nook=${encodeURIComponent(nook.id)}`)
   }, [])
 
   // ── close detail panel ────────────────────────────────────────────────────
@@ -132,6 +135,47 @@ export function DiscoveryMap() {
     selectedIdRef.current = null
     window.history.pushState(null, '', '/')
   }, [])
+
+  // ── fetch a nook by ID and open its panel (for URL-restore of off-list nooks) ──
+  const fetchAndOpenNook = useCallback(async (id: string) => {
+    try {
+      const res = await fetch(`/api/places/${encodeURIComponent(id)}`)
+      if (!res.ok) return
+      const raw = await res.json() as {
+        displayName?: { text?: string }
+        formattedAddress?: string
+        addressComponents?: Array<{ longText: string; types: string[] }>
+        location?: { latitude: number; longitude: number }
+        rating?: number
+        types?: string[]
+      }
+      const types = raw.types ?? []
+      const nookType: NookType =
+        types.some(t => ['cafe', 'coffee_shop'].includes(t)) ? 'cafe' :
+        types.includes('library') ? 'library' :
+        types.includes('coworking_space') ? 'coworking' : 'other'
+      const neighborhood = raw.addressComponents?.find(
+        c =>
+          c.types.includes('neighborhood') ||
+          c.types.includes('sublocality_level_1') ||
+          c.types.includes('sublocality')
+      )?.longText
+      const nook: NookPlace = {
+        id,
+        name: raw.displayName?.text ?? 'Unknown',
+        lat: raw.location?.latitude ?? 0,
+        lng: raw.location?.longitude ?? 0,
+        address: raw.formattedAddress ?? '',
+        neighborhood,
+        type: nookType,
+        rating: raw.rating,
+        workSignals: [],
+      }
+      handleSelectNook(nook)
+    } catch {
+      // network error — silently ignore
+    }
+  }, [handleSelectNook])
 
   // ── initialise map (runs once) ────────────────────────────────────────────
   useEffect(() => {
@@ -306,11 +350,26 @@ export function DiscoveryMap() {
     if (!map || !mapLoadedRef.current) return
     pointMarkersRef.current.forEach(m => m.remove())
     pointMarkersRef.current.clear()
-    setDetailNook(null)
-    setSelectedId(null)
-    selectedIdRef.current = null
+
+    const pendingId = pendingNookIdRef.current
+    if (!pendingId) {
+      setDetailNook(null)
+      setSelectedId(null)
+      selectedIdRef.current = null
+    }
+
     ;(map.getSource(SRC) as mapboxgl.GeoJSONSource)?.setData(toGeoJSON(nooks))
-  }, [nooks])
+
+    if (pendingId) {
+      pendingNookIdRef.current = null
+      const found = nooks.find(n => n.id === pendingId)
+      if (found) {
+        handleSelectNook(found)
+      } else {
+        void fetchAndOpenNook(pendingId)
+      }
+    }
+  }, [nooks, handleSelectNook, fetchAndOpenNook])
 
   // ── keep selectedIdRef in sync; update marker colors ─────────────────────
   useEffect(() => {
