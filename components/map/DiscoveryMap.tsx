@@ -1,14 +1,23 @@
 'use client'
 
+import type { CSSProperties } from 'react'
 import { useRef, useEffect, useState, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import mapboxgl from 'mapbox-gl'
-import { ChevronUp } from 'lucide-react'
+import { ChevronUp, ScanSearch } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AuthControls } from '@/components/auth/AuthControls'
 import type { NookPlace, NookType, FilterType } from '@/types/nook'
 import { NookDetailPanel } from '@/components/nook/NookDetailPanel'
 import { SearchPill } from '@/components/map/SearchPill'
+import {
+  DEFAULT_RADIUS_M,
+  MIN_RADIUS_M,
+  MAX_RADIUS_M,
+  formatRadius,
+  createCirclePolygon,
+  getCircleBounds,
+} from '@/components/map/radiusUtils'
 
 const SF_CENTER: [number, number] = [-122.4194, 37.7749]
 const GEO_TIMEOUT_MS = 8000
@@ -16,6 +25,12 @@ const GEO_TIMEOUT_MS = 8000
 const SRC = 'nooks'
 const L_CLUSTERS = 'clusters'
 const L_CLUSTER_COUNT = 'cluster-count'
+
+const RADIUS_CIRCLE_SRC = 'radius-circle'
+const RADIUS_CIRCLE_FILL = 'radius-circle-fill'
+const RADIUS_CIRCLE_LINE = 'radius-circle-line'
+// Moss-green hex matching --primary for Mapbox paint properties
+const RADIUS_COLOR = '#4a7c3f'
 
 const COLOR_NORMAL = 'oklch(0.42 0.09 145)'
 const COLOR_SELECTED = '#c4623a'
@@ -46,8 +61,25 @@ type PlacesPanelProps = {
   distanceOrigin: [number, number] | null
   selectedId: string | null
   useMiles: boolean
+  radiusM: number
+  isRadiusActive: boolean
   onToggleUnit: () => void
+  onToggleRadius: () => void
+  onRadiusChange: (v: number) => void
   onSelectNook: (nook: NookPlace) => void
+}
+
+function getResultsSummary(
+  count: number,
+  loading: boolean,
+  radiusM: number,
+  useMiles: boolean,
+  isRadiusActive: boolean,
+): string {
+  if (loading) return 'finding spots…'
+
+  const noun = `${count} spot${count !== 1 ? 's' : ''}`
+  return isRadiusActive ? `${noun} within ${formatRadius(radiusM, useMiles)}` : `${noun} nearby`
 }
 
 function distanceM([lat1, lng1]: [number, number], [lat2, lng2]: [number, number]): number {
@@ -99,7 +131,11 @@ function PlacesPanel({
   distanceOrigin,
   selectedId,
   useMiles,
+  radiusM,
+  isRadiusActive,
   onToggleUnit,
+  onToggleRadius,
+  onRadiusChange,
   onSelectNook,
 }: PlacesPanelProps) {
   const placesWithDist = places.map(nook => ({
@@ -107,23 +143,77 @@ function PlacesPanel({
     dist: distanceOrigin ? distanceM([distanceOrigin[1], distanceOrigin[0]], [nook.lat, nook.lng]) : undefined,
   }))
 
+  const sliderPct = ((radiusM - MIN_RADIUS_M) / (MAX_RADIUS_M - MIN_RADIUS_M)) * 100
+
   return (
     <>
-      <div className="px-4 pt-4 pb-3 shrink-0 flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="font-semibold text-base truncate">{title}</p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {loading
-              ? 'finding spots…'
-              : `${places.length} spot${places.length !== 1 ? 's' : ''} within 1.5km`}
-          </p>
+      <div className="px-4 pt-4 pb-3 shrink-0">
+        {/* Title row */}
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="font-semibold text-base truncate">{title}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {getResultsSummary(places.length, loading, radiusM, useMiles, isRadiusActive)}
+            </p>
+          </div>
+          {/* Radius toggle + unit toggle */}
+          <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+            <button
+              onClick={onToggleRadius}
+              title="Set search radius"
+              aria-label="Set search radius"
+              aria-pressed={isRadiusActive}
+              className={cn(
+                'h-[22px] w-[22px] rounded-full flex items-center justify-center border transition-all duration-150',
+                isRadiusActive
+                  ? 'bg-primary/10 text-primary border-primary/30'
+                  : 'text-muted-foreground border-border/50 hover:border-border hover:text-foreground',
+              )}
+            >
+              <ScanSearch className="w-3 h-3" />
+            </button>
+            <button
+              onClick={onToggleUnit}
+              className="text-xs font-medium text-muted-foreground border border-border rounded-full px-2 py-0.5 hover:bg-muted transition-colors"
+            >
+              {useMiles ? 'mi' : 'km'}
+            </button>
+          </div>
         </div>
-        <button
-          onClick={onToggleUnit}
-          className="shrink-0 mt-0.5 text-xs font-medium text-muted-foreground border border-border rounded-full px-2 py-0.5 hover:bg-muted transition-colors"
-        >
-          {useMiles ? 'mi' : 'km'}
-        </button>
+
+        {/* Inline radius slider — slides open below the title row */}
+        {isRadiusActive && (
+          <div className="mt-3 pt-3 border-t border-border/40">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground/70">
+                Search radius
+              </p>
+              <span className="rounded-full border border-primary/15 bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                {formatRadius(radiusM, useMiles)}
+              </span>
+            </div>
+            <input
+              type="range"
+              min={MIN_RADIUS_M}
+              max={MAX_RADIUS_M}
+              step={100}
+              value={radiusM}
+              onChange={e => onRadiusChange(Number(e.target.value))}
+              className="radius-slider w-full"
+              aria-label="Search radius"
+              aria-valuetext={formatRadius(radiusM, useMiles)}
+              style={{ '--radius-pct': `${sliderPct}%` } as CSSProperties}
+            />
+            <div className="flex justify-between mt-1.5">
+              <span className="text-[10px] text-muted-foreground/60">
+                {formatRadius(MIN_RADIUS_M, useMiles)}
+              </span>
+              <span className="text-[10px] text-muted-foreground/60">
+                {formatRadius(MAX_RADIUS_M, useMiles)}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-2">
@@ -189,6 +279,7 @@ export function DiscoveryMap() {
   const pendingNookIdRef = useRef<string | null>(searchParams.get('nook'))
   const nearbyRequestIdRef = useRef(0)
   const searchedRequestIdRef = useRef(0)
+  const radiusMRef = useRef(DEFAULT_RADIUS_M)
 
   const [nearbyNooks, setNearbyNooks] = useState<NookPlace[]>([])
   const [searchedNooks, setSearchedNooks] = useState<NookPlace[]>([])
@@ -207,9 +298,16 @@ export function DiscoveryMap() {
     if (typeof navigator === 'undefined') return false
     return navigator.language === 'en-US'
   })
+  const [radiusM, setRadiusM] = useState(DEFAULT_RADIUS_M)
+  const [isRadiusActive, setIsRadiusActive] = useState(false)
 
   const fetchPlaces = useCallback(async (lat: number, lng: number, type: FilterType) => {
-    const qs = new URLSearchParams({ lat: String(lat), lng: String(lng), type })
+    const qs = new URLSearchParams({
+      lat: String(lat),
+      lng: String(lng),
+      type,
+      radius: String(radiusMRef.current),
+    })
     const res = await fetch(`/api/places?${qs}`)
     if (!res.ok) return []
     const data = (await res.json()) as { places?: NookPlace[] }
@@ -313,26 +411,60 @@ export function DiscoveryMap() {
     invalidateSearchedResults()
   }, [clearSelectedNook, invalidateSearchedResults, nearbyNooks])
 
-  const restoreNearbyView = useCallback(() => {
-    clearSelectedNook()
-    mapSyncModeRef.current = 'nearby'
-    setIsSearchOpen(false)
-
-    const target = realUserLocRef.current ?? nearbyOriginRef.current ?? SF_CENTER
-    mapRef.current?.flyTo({ center: target, zoom: 14, duration: 1000 })
-    void loadNearbyPlaces(target, filter, {
-      forceMapUpdate: true,
-      mapTarget: 'nearby',
-      updateMap: true,
-    })
-  }, [clearSelectedNook, filter, loadNearbyPlaces])
-
   const beginEditingSelectedLocation = useCallback(() => {
     clearSelectedNook()
     mapSyncModeRef.current = 'frozen'
     setSelectedSearchLocation(null)
     invalidateSearchedResults()
   }, [clearSelectedNook, invalidateSearchedResults])
+
+  /**
+   * Zoom the map so the radius circle fits comfortably in the viewport.
+   * Zoom is clamped between 11 (city scale) and 13 (neighbourhood scale).
+   */
+  const fitToCircle = useCallback((center: [number, number], radius: number) => {
+    const map = mapRef.current
+    if (!map) return
+
+    const bounds = getCircleBounds(center, radius)
+    // Left panel (300px) + margin pushes the visual centre rightward — compensate with left padding
+    const camera = map.cameraForBounds(bounds, {
+      padding: { top: 60, bottom: 60, left: 340, right: 60 },
+      maxZoom: 13,
+    })
+    if (!camera) return
+
+    const zoom = Math.max(11, Math.min(13, camera.zoom ?? 12))
+    map.easeTo({ center: camera.center ?? center, zoom, duration: 300 })
+  }, [])
+
+  /** Synchronously update the radius ref + state and redraw the circle. */
+  const handleRadiusChange = useCallback((value: number) => {
+    radiusMRef.current = value
+    setRadiusM(value)
+  }, [])
+
+  const handleToggleRadius = useCallback(() => {
+    setIsRadiusActive(prev => !prev)
+  }, [])
+
+  const restoreNearbyView = useCallback(() => {
+    clearSelectedNook()
+    mapSyncModeRef.current = 'nearby'
+    setIsSearchOpen(false)
+
+    const target = realUserLocRef.current ?? nearbyOriginRef.current ?? SF_CENTER
+    if (isRadiusActive) {
+      fitToCircle(target, radiusMRef.current)
+    } else {
+      mapRef.current?.flyTo({ center: target, zoom: 14, duration: 1000 })
+    }
+    void loadNearbyPlaces(target, filter, {
+      forceMapUpdate: true,
+      mapTarget: 'nearby',
+      updateMap: true,
+    })
+  }, [clearSelectedNook, filter, fitToCircle, isRadiusActive, loadNearbyPlaces])
 
   const handleSelectNook = useCallback((nook: NookPlace) => {
     if (selectedIdRef.current && selectedIdRef.current !== nook.id) {
@@ -364,9 +496,13 @@ export function DiscoveryMap() {
     setSelectedSearchLocation(location)
     setIsSearchOpen(true)
 
-    mapRef.current?.flyTo({ center: [lng, lat], zoom: 14, duration: 1000 })
+    if (isRadiusActive) {
+      fitToCircle([lng, lat], radiusMRef.current)
+    } else {
+      mapRef.current?.flyTo({ center: [lng, lat], zoom: 14, duration: 1000 })
+    }
     void loadSearchedPlaces(location, filter, { mapTarget: 'search', updateMap: true })
-  }, [clearSelectedNook, filter, loadSearchedPlaces])
+  }, [clearSelectedNook, filter, fitToCircle, isRadiusActive, loadSearchedPlaces])
 
   const fetchAndOpenNook = useCallback(async (id: string) => {
     try {
@@ -500,6 +636,33 @@ export function DiscoveryMap() {
         },
         paint: { 'text-color': '#fff' },
       })
+
+      // Radius circle source + layers (drawn below venue markers)
+      map.addSource(RADIUS_CIRCLE_SRC, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      })
+      map.addLayer({
+        id: RADIUS_CIRCLE_FILL,
+        type: 'fill',
+        source: RADIUS_CIRCLE_SRC,
+        paint: {
+          'fill-color': RADIUS_COLOR,
+          'fill-opacity': 0.07,
+        },
+      }, L_CLUSTERS) // insert below cluster layers so markers render on top
+
+      map.addLayer({
+        id: RADIUS_CIRCLE_LINE,
+        type: 'line',
+        source: RADIUS_CIRCLE_SRC,
+        paint: {
+          'line-color': RADIUS_COLOR,
+          'line-width': 1.5,
+          'line-dasharray': [3, 2],
+          'line-opacity': 0.55,
+        },
+      }, L_CLUSTERS)
 
       const syncPointMarkers = () => {
         const features = map.querySourceFeatures(SRC, {
@@ -645,6 +808,53 @@ export function DiscoveryMap() {
     }
   }, [filter, loadNearbyPlaces, loadSearchedPlaces])
 
+  // Draw (or clear) the radius circle on the map whenever active state, radius,
+  // or the effective centre changes.
+  // Note: centre is computed inside the effect to avoid creating a new array reference
+  // on every render (which would cause the effect to re-run unnecessarily).
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapLoadedRef.current) return
+
+    const src = map.getSource(RADIUS_CIRCLE_SRC) as mapboxgl.GeoJSONSource | undefined
+    if (!src) return
+
+    if (!isRadiusActive) {
+      src.setData({ type: 'FeatureCollection', features: [] })
+      return
+    }
+
+    const center: [number, number] = selectedSearchLocation
+      ? [selectedSearchLocation.lng, selectedSearchLocation.lat]
+      : (nearbyOrigin ?? SF_CENTER)
+
+    src.setData({ type: 'FeatureCollection', features: [createCirclePolygon(center, radiusM)] })
+    fitToCircle(center, radiusM)
+  }, [isRadiusActive, radiusM, selectedSearchLocation, nearbyOrigin, fitToCircle])
+
+  // Debounced refetch when the slider value settles — only while the selector is open.
+  useEffect(() => {
+    if (!isRadiusActive) return
+
+    const timer = setTimeout(() => {
+      const origin = nearbyOriginRef.current ?? SF_CENTER
+      void loadNearbyPlaces(origin, filter, {
+        mapTarget: 'nearby',
+        updateMap: mapSyncModeRef.current === 'nearby',
+        forceMapUpdate: mapSyncModeRef.current === 'nearby',
+      })
+      if (selectedSearchLocationRef.current) {
+        void loadSearchedPlaces(selectedSearchLocationRef.current, filter, {
+          mapTarget: 'search',
+          updateMap: mapSyncModeRef.current === 'search',
+          forceMapUpdate: mapSyncModeRef.current === 'search',
+        })
+      }
+    }, 250)
+
+    return () => clearTimeout(timer)
+  }, [radiusM, isRadiusActive, filter, loadNearbyPlaces, loadSearchedPlaces])
+
   const searchBiasLocation = realUserLoc ?? nearbyOrigin
   const leftStackBottomPx = SIDEBAR_BOTTOM_PX + MAPBOX_LOGO_SAFE_AREA_PX
   const nearbyPanelHeight = isSearchOpen
@@ -721,9 +931,7 @@ export function DiscoveryMap() {
             <div className="min-w-0 space-y-1">
               <p className="font-semibold text-base leading-none">nooks near you</p>
               <p className="text-xs leading-none text-muted-foreground">
-                {nearbyLoading
-                  ? 'finding spots…'
-                  : `${nearbyNooks.length} spot${nearbyNooks.length !== 1 ? 's' : ''} within 1.5km`}
+                {getResultsSummary(nearbyNooks.length, nearbyLoading, radiusM, useMiles, isRadiusActive)}
               </p>
             </div>
             <span className="shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-full border border-primary/15 bg-primary/10 text-primary shadow-sm">
@@ -738,7 +946,11 @@ export function DiscoveryMap() {
             distanceOrigin={realUserLoc ?? nearbyOrigin}
             selectedId={selectedId}
             useMiles={useMiles}
+            radiusM={radiusM}
+            isRadiusActive={isRadiusActive}
             onToggleUnit={() => setUseMiles(value => !value)}
+            onToggleRadius={handleToggleRadius}
+            onRadiusChange={handleRadiusChange}
             onSelectNook={handleSelectNook}
           />
         )}
@@ -759,7 +971,11 @@ export function DiscoveryMap() {
               distanceOrigin={[selectedSearchLocation.lng, selectedSearchLocation.lat]}
               selectedId={selectedId}
               useMiles={useMiles}
+              radiusM={radiusM}
+              isRadiusActive={isRadiusActive}
               onToggleUnit={() => setUseMiles(value => !value)}
+              onToggleRadius={handleToggleRadius}
+              onRadiusChange={handleRadiusChange}
               onSelectNook={handleSelectNook}
             />
           ) : null}
