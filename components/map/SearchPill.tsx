@@ -1,11 +1,12 @@
 'use client'
 
-import { useRef, useState, useCallback, useEffect } from 'react'
+import { useRef, useState, useCallback, useEffect, useId, useMemo } from 'react'
 import { Search, X } from 'lucide-react'
 import { SearchBoxCore } from '@mapbox/search-js-core'
 import type { SearchBoxSuggestion } from '@mapbox/search-js-core'
 import { LogoWordmark } from '@/components/LogoWordmark'
 import { cn } from '@/lib/utils'
+import { findDirectMatchSuggestion } from './searchPillMatch'
 
 const SEARCH_TYPES = 'place,poi,neighborhood,address,locality,district,region'
 
@@ -41,6 +42,7 @@ export function SearchPill({
   userLocation,
 }: Props) {
   const [suggestions, setSuggestions] = useState<SearchBoxSuggestion[]>([])
+  const [highlightedSuggestionId, setHighlightedSuggestionId] = useState<string | null>(null)
   const searchCoreRef = useRef(
     new SearchBoxCore({ accessToken: process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? '' })
   )
@@ -48,8 +50,18 @@ export function SearchPill({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const focusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const suggestionRequestIdRef = useRef(0)
+  const listboxId = useId()
 
   const hasSelectedLocation = selectedLocation !== null
+  const canShowSuggestions = isOpen && !hasSelectedLocation && query.trim().length >= 3
+  const canRetrieveSuggestion = useCallback((suggestion: SearchBoxSuggestion) => {
+    const searchCore = searchCoreRef.current as SearchBoxCore & {
+      canRetrieve?: (candidate: SearchBoxSuggestion) => boolean
+    }
+
+    return searchCore.canRetrieve ? searchCore.canRetrieve(suggestion) : true
+  }, [])
 
   const openSearch = useCallback(() => {
     onSearchOpen()
@@ -57,11 +69,13 @@ export function SearchPill({
 
   const collapseSearch = useCallback(() => {
     setSuggestions([])
+    setHighlightedSuggestionId(null)
     onSearchCollapse()
   }, [onSearchCollapse])
 
   const clearSearch = useCallback(() => {
     setSuggestions([])
+    setHighlightedSuggestionId(null)
     onSearchClear()
     sessionTokenRef.current = crypto.randomUUID()
   }, [onSearchClear])
@@ -88,6 +102,8 @@ export function SearchPill({
       return
     }
 
+    const requestId = ++suggestionRequestIdRef.current
+
     try {
       const response = await searchCoreRef.current.suggest(q, {
         sessionToken: sessionTokenRef.current,
@@ -96,22 +112,18 @@ export function SearchPill({
         limit: 5,
         types: SEARCH_TYPES,
       })
+      if (requestId !== suggestionRequestIdRef.current) return
       setSuggestions(response.suggestions)
-    } catch { /* network error */ }
+    } catch {
+      if (requestId !== suggestionRequestIdRef.current) return
+      setSuggestions([])
+    }
   }, [])
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
 
-    if (!isOpen || hasSelectedLocation) {
-      setSuggestions([])
-      return
-    }
-
-    if (query.trim().length < 3) {
-      setSuggestions([])
-      return
-    }
+    if (!canShowSuggestions) return
 
     debounceRef.current = setTimeout(() => {
       void fetchSuggestions(query, userLocation)
@@ -120,7 +132,7 @@ export function SearchPill({
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
-  }, [fetchSuggestions, hasSelectedLocation, isOpen, query, userLocation])
+  }, [canShowSuggestions, fetchSuggestions, query, userLocation])
 
   useEffect(() => {
     return () => {
@@ -144,10 +156,64 @@ export function SearchPill({
       const [lng, lat] = coords
       onQueryChange(suggestion.name)
       setSuggestions([])
+      setHighlightedSuggestionId(null)
       onLocationSelect(lng, lat, suggestion.name)
       sessionTokenRef.current = crypto.randomUUID()
     } catch { /* network error */ }
   }, [onLocationSelect, onQueryChange])
+
+  const visibleSuggestions = useMemo(() => {
+    return canShowSuggestions ? suggestions : []
+  }, [canShowSuggestions, suggestions])
+
+  const directMatchSuggestion = useMemo(() => {
+    return findDirectMatchSuggestion(query, visibleSuggestions)
+  }, [query, visibleSuggestions])
+
+  const highlightedSuggestionIndex = useMemo(() => {
+    if (!highlightedSuggestionId) return -1
+
+    return visibleSuggestions.findIndex(suggestion => suggestion.mapbox_id === highlightedSuggestionId)
+  }, [highlightedSuggestionId, visibleSuggestions])
+
+  const activeSuggestionIndex =
+    highlightedSuggestionIndex >= 0
+      ? highlightedSuggestionIndex
+      : directMatchSuggestion
+        ? visibleSuggestions.findIndex(suggestion => suggestion.mapbox_id === directMatchSuggestion.mapbox_id)
+        : -1
+
+  const handleInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (visibleSuggestions.length === 0) return
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      const nextIndex = activeSuggestionIndex >= 0 ? (activeSuggestionIndex + 1) % visibleSuggestions.length : 0
+      setHighlightedSuggestionId(visibleSuggestions[nextIndex]?.mapbox_id ?? null)
+      return
+    }
+
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      const nextIndex =
+        activeSuggestionIndex >= 0
+          ? (activeSuggestionIndex - 1 + visibleSuggestions.length) % visibleSuggestions.length
+          : visibleSuggestions.length - 1
+      setHighlightedSuggestionId(visibleSuggestions[nextIndex]?.mapbox_id ?? null)
+      return
+    }
+
+    if (e.key !== 'Enter') return
+
+    const directMatch = findDirectMatchSuggestion(query, visibleSuggestions, canRetrieveSuggestion)
+    const selectedSuggestion =
+      activeSuggestionIndex >= 0 ? visibleSuggestions[activeSuggestionIndex] : directMatch
+
+    if (!selectedSuggestion || !canRetrieveSuggestion(selectedSuggestion)) return
+
+    e.preventDefault()
+    void handleSelect(selectedSuggestion)
+  }, [activeSuggestionIndex, canRetrieveSuggestion, handleSelect, query, visibleSuggestions])
 
   return (
     <div className="relative">
@@ -187,7 +253,13 @@ export function SearchPill({
             type="text"
             value={query}
             onChange={handleInput}
+            onKeyDown={handleInputKeyDown}
             placeholder="search anywhere..."
+            aria-autocomplete="list"
+            aria-controls={listboxId}
+            aria-activedescendant={
+              activeSuggestionIndex >= 0 ? `${listboxId}-option-${activeSuggestionIndex}` : undefined
+            }
             aria-hidden={!isOpen}
             className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60 text-foreground"
             style={{
@@ -213,15 +285,24 @@ export function SearchPill({
       </div>
 
       {/* Autocomplete dropdown */}
-      {isOpen && !hasSelectedLocation && suggestions.length > 0 && (
-        <div className="absolute top-[calc(100%+8px)] left-0 right-0 bg-background/95 backdrop-blur-sm rounded-xl shadow-xl border border-border overflow-hidden z-50">
-          {suggestions.map((s, i) => (
+      {visibleSuggestions.length > 0 && (
+        <div
+          id={listboxId}
+          role="listbox"
+          className="absolute top-[calc(100%+8px)] left-0 right-0 bg-background/95 backdrop-blur-sm rounded-xl shadow-xl border border-border overflow-hidden z-50"
+        >
+          {visibleSuggestions.map((s, i) => (
             <button
+              id={`${listboxId}-option-${i}`}
               key={s.mapbox_id}
+              role="option"
+              aria-selected={activeSuggestionIndex === i}
               onClick={() => handleSelect(s)}
+              onMouseEnter={() => setHighlightedSuggestionId(s.mapbox_id)}
               className={cn(
-                'w-full text-left px-4 py-2.5 hover:bg-muted transition-colors',
-                i < suggestions.length - 1 && 'border-b border-border/40'
+                'w-full text-left px-4 py-2.5 transition-colors',
+                activeSuggestionIndex === i ? 'bg-muted' : 'hover:bg-muted',
+                i < visibleSuggestions.length - 1 && 'border-b border-border/40'
               )}
             >
               <p className="text-sm font-semibold leading-snug">{s.name}</p>
