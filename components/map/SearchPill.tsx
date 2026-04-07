@@ -2,26 +2,27 @@
 
 import { useRef, useState, useCallback, useEffect } from 'react'
 import { Search, X } from 'lucide-react'
+import { SearchBoxCore } from '@mapbox/search-js-core'
+import type { SearchBoxSuggestion } from '@mapbox/search-js-core'
 import { LogoWordmark } from '@/components/LogoWordmark'
 import { cn } from '@/lib/utils'
 
-type Suggestion = {
-  mapbox_id: string
-  name: string
-  place_formatted?: string
-  full_address?: string
-}
+const SEARCH_TYPES = 'place,poi,neighborhood,address,locality,district,region'
 
 type Props = {
   onSearchOpen: () => void
   onSearchClose: () => void
   onLocationSelect: (lng: number, lat: number, name: string) => void
+  userLocation: [number, number] | null
 }
 
-export function SearchPill({ onSearchOpen, onSearchClose, onLocationSelect }: Props) {
+export function SearchPill({ onSearchOpen, onSearchClose, onLocationSelect, userLocation }: Props) {
   const [isOpen, setIsOpen] = useState(false)
   const [query, setQuery] = useState('')
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([])
+  const [suggestions, setSuggestions] = useState<SearchBoxSuggestion[]>([])
+  const searchCoreRef = useRef(
+    new SearchBoxCore({ accessToken: process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? '' })
+  )
   const sessionTokenRef = useRef(crypto.randomUUID())
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -47,20 +48,17 @@ export function SearchPill({ onSearchOpen, onSearchClose, onLocationSelect }: Pr
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [isOpen, closeSearch])
 
-  const fetchSuggestions = useCallback(async (q: string) => {
-    if (!q.trim()) { setSuggestions([]); return }
-    const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? ''
-    const url = new URL('https://api.mapbox.com/search/searchbox/v1/suggest')
-    url.searchParams.set('q', q)
-    url.searchParams.set('access_token', token)
-    url.searchParams.set('session_token', sessionTokenRef.current)
-    url.searchParams.set('types', 'place,neighborhood,address,locality,district')
-    url.searchParams.set('limit', '5')
+  const fetchSuggestions = useCallback(async (q: string, loc: [number, number] | null) => {
+    if (q.trim().length < 3) { setSuggestions([]); return }
     try {
-      const res = await fetch(url.toString())
-      if (!res.ok) return
-      const data = await res.json() as { suggestions?: Suggestion[] }
-      setSuggestions(data.suggestions ?? [])
+      const response = await searchCoreRef.current.suggest(q, {
+        sessionToken: sessionTokenRef.current,
+        proximity: loc ? { lng: loc[0], lat: loc[1] } : 'ip',
+        language: 'en',
+        limit: 5,
+        types: SEARCH_TYPES,
+      })
+      setSuggestions(response.suggestions)
     } catch { /* network error */ }
   }, [])
 
@@ -68,17 +66,15 @@ export function SearchPill({ onSearchOpen, onSearchClose, onLocationSelect }: Pr
     const val = e.target.value
     setQuery(val)
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => fetchSuggestions(val), 300)
-  }, [fetchSuggestions])
+    debounceRef.current = setTimeout(() => fetchSuggestions(val, userLocation), 300)
+  }, [fetchSuggestions, userLocation])
 
-  const handleSelect = useCallback(async (suggestion: Suggestion) => {
-    const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? ''
-    const url = `https://api.mapbox.com/search/searchbox/v1/retrieve/${suggestion.mapbox_id}?access_token=${encodeURIComponent(token)}&session_token=${encodeURIComponent(sessionTokenRef.current)}`
+  const handleSelect = useCallback(async (suggestion: SearchBoxSuggestion) => {
     try {
-      const res = await fetch(url)
-      if (!res.ok) return
-      const data = await res.json() as { features?: Array<{ geometry: { coordinates: [number, number] } }> }
-      const coords = data.features?.[0]?.geometry?.coordinates
+      const retrieved = await searchCoreRef.current.retrieve(suggestion, {
+        sessionToken: sessionTokenRef.current,
+      })
+      const coords = retrieved.features[0]?.geometry?.coordinates as [number, number] | undefined
       if (!coords) return
       const [lng, lat] = coords
       setQuery(suggestion.name)
@@ -160,10 +156,8 @@ export function SearchPill({ onSearchOpen, onSearchClose, onLocationSelect }: Pr
               )}
             >
               <p className="text-sm font-semibold leading-snug">{s.name}</p>
-              {(s.place_formatted ?? s.full_address) && (
-                <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                  {s.place_formatted ?? s.full_address}
-                </p>
+              {s.place_formatted && (
+                <p className="text-xs text-muted-foreground mt-0.5 truncate">{s.place_formatted}</p>
               )}
             </button>
           ))}
