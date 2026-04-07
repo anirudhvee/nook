@@ -3,6 +3,7 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import mapboxgl from 'mapbox-gl'
+import { ChevronUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AuthControls } from '@/components/auth/AuthControls'
 import type { NookPlace, NookType, FilterType } from '@/types/nook'
@@ -20,6 +21,7 @@ const COLOR_NORMAL = 'oklch(0.42 0.09 145)'
 const COLOR_SELECTED = '#c4623a'
 
 const SIDEBAR_BOTTOM_PX = 16
+const MAPBOX_LOGO_SAFE_AREA_PX = 28
 const PEEK_STRIP_HEIGHT_PX = 72
 const PANEL_STACK_GAP_PX = 8
 
@@ -579,11 +581,12 @@ export function DiscoveryMap() {
     })
 
     mapRef.current = map
+    const pointMarkers = pointMarkersRef.current
 
     return () => {
       clearTimeout(fallbackTimer)
-      pointMarkersRef.current.forEach(marker => marker.remove())
-      pointMarkersRef.current.clear()
+      pointMarkers.forEach(marker => marker.remove())
+      pointMarkers.clear()
       map.remove()
       mapRef.current = null
       mapLoadedRef.current = false
@@ -643,9 +646,13 @@ export function DiscoveryMap() {
   }, [filter, loadNearbyPlaces, loadSearchedPlaces])
 
   const searchBiasLocation = realUserLoc ?? nearbyOrigin
+  const leftStackBottomPx = SIDEBAR_BOTTOM_PX + MAPBOX_LOGO_SAFE_AREA_PX
+  const nearbyPanelHeight = isSearchOpen
+    ? `${PEEK_STRIP_HEIGHT_PX}px`
+    : `calc(100vh - 72px - ${leftStackBottomPx}px)`
   const searchPanelBottom = isSearchOpen
-    ? `${SIDEBAR_BOTTOM_PX + PEEK_STRIP_HEIGHT_PX + PANEL_STACK_GAP_PX}px`
-    : `${SIDEBAR_BOTTOM_PX}px`
+    ? `${leftStackBottomPx + PEEK_STRIP_HEIGHT_PX + PANEL_STACK_GAP_PX}px`
+    : `${leftStackBottomPx}px`
   const showSearchResultsPanel = isSearchOpen && selectedSearchLocation !== null
 
   return (
@@ -699,23 +706,29 @@ export function DiscoveryMap() {
       </div>
 
       <div
-        className="absolute top-[72px] left-4 bottom-4 z-10 w-[300px] flex flex-col rounded-2xl bg-background/95 backdrop-blur-sm shadow-lg border border-border overflow-hidden"
+        className="absolute left-4 z-10 w-[300px] flex flex-col rounded-2xl bg-background/95 backdrop-blur-sm shadow-lg border border-border overflow-hidden"
         style={{
-          transform: isSearchOpen ? `translateY(calc(100% - ${PEEK_STRIP_HEIGHT_PX}px))` : 'translateY(0)',
-          transition: 'transform 350ms cubic-bezier(0.4, 0, 0.2, 1)',
+          bottom: `${leftStackBottomPx}px`,
+          height: nearbyPanelHeight,
+          transition: 'height 350ms cubic-bezier(0.4, 0, 0.2, 1)',
         }}
       >
         {isSearchOpen ? (
           <button
             onClick={restoreNearbyView}
-            className="w-full h-[72px] px-4 pt-4 pb-3 text-left shrink-0 hover:bg-muted/40 transition-colors"
+            className="w-full h-[72px] px-4 py-3 text-left shrink-0 hover:bg-muted/40 transition-colors flex items-center justify-between gap-3"
           >
-            <p className="font-semibold text-base">nooks near you</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {nearbyLoading
-                ? 'finding spots…'
-                : `${nearbyNooks.length} spot${nearbyNooks.length !== 1 ? 's' : ''} within 1.5km`}
-            </p>
+            <div className="min-w-0 space-y-1">
+              <p className="font-semibold text-base leading-none">nooks near you</p>
+              <p className="text-xs leading-none text-muted-foreground">
+                {nearbyLoading
+                  ? 'finding spots…'
+                  : `${nearbyNooks.length} spot${nearbyNooks.length !== 1 ? 's' : ''} within 1.5km`}
+              </p>
+            </div>
+            <span className="shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-full border border-primary/15 bg-primary/10 text-primary shadow-sm">
+              <ChevronUp className="h-4 w-4" strokeWidth={2.25} />
+            </span>
           </button>
         ) : (
           <PlacesPanel
