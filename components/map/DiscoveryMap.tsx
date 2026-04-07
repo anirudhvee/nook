@@ -414,6 +414,7 @@ export function DiscoveryMap() {
           onSearchOpen={() => setIsSearchOpen(true)}
           onSearchClose={() => setIsSearchOpen(false)}
           onLocationSelect={handleLocationSelect}
+          userLocation={userLoc}
         />
       </div>
 
