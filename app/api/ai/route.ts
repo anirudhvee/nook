@@ -22,13 +22,6 @@ interface ReviewInput {
   rating?: number | null
 }
 
-interface WorkSignalsRow {
-  nook_id: string
-  signals: AllowedSignal[]
-  summary: string | null
-  parsed_at: string
-}
-
 interface OpenAIChatResponse {
   choices?: Array<{
     message?: {

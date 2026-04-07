@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
@@ -70,9 +71,12 @@ export function AuthControls({ variant }: AuthControlsProps) {
       (_event: AuthChangeEvent, session: Session | null) => {
         if (!isMounted) return;
         setUser(session?.user ?? null);
+        setEmail("");
         setIsAuthModalOpen(false);
         setIsDropdownOpen(false);
         setStatusMessage(null);
+        setIsGoogleLoading(false);
+        setIsMagicLinkLoading(false);
         router.refresh();
       }
     );
@@ -82,15 +86,6 @@ export function AuthControls({ variant }: AuthControlsProps) {
       subscription.unsubscribe();
     };
   }, [router, supabase]);
-
-  useEffect(() => {
-    if (!isAuthModalOpen) {
-      setEmail("");
-      setStatusMessage(null);
-      setIsGoogleLoading(false);
-      setIsMagicLinkLoading(false);
-    }
-  }, [isAuthModalOpen]);
 
   useEffect(() => {
     if (!isDropdownOpen) return;
@@ -113,6 +108,10 @@ export function AuthControls({ variant }: AuthControlsProps) {
 
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        setEmail("");
+        setStatusMessage(null);
+        setIsGoogleLoading(false);
+        setIsMagicLinkLoading(false);
         setIsAuthModalOpen(false);
       }
     };
@@ -124,8 +123,20 @@ export function AuthControls({ variant }: AuthControlsProps) {
     };
   }, [isAuthModalOpen]);
 
+  const closeAuthModal = () => {
+    setEmail("");
+    setStatusMessage(null);
+    setIsGoogleLoading(false);
+    setIsMagicLinkLoading(false);
+    setIsAuthModalOpen(false);
+  };
+
   const openAuthModal = () => {
     setIsDropdownOpen(false);
+    setEmail("");
+    setStatusMessage(null);
+    setIsGoogleLoading(false);
+    setIsMagicLinkLoading(false);
     setIsAuthModalOpen(true);
   };
 
@@ -238,10 +249,12 @@ export function AuthControls({ variant }: AuthControlsProps) {
               aria-label="Open account menu"
             >
               {avatarUrl ? (
-                <img
+                <Image
                   src={avatarUrl}
                   alt=""
-                  className="size-full object-cover"
+                  fill
+                  sizes={variant === "map" ? "40px" : "36px"}
+                  className="object-cover"
                   referrerPolicy="no-referrer"
                 />
               ) : (
@@ -293,7 +306,7 @@ export function AuthControls({ variant }: AuthControlsProps) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/20 px-4 backdrop-blur-[2px]">
           <div
             className="absolute inset-0"
-            onClick={() => setIsAuthModalOpen(false)}
+            onClick={closeAuthModal}
             aria-hidden="true"
           />
           <div className="relative z-10 w-full max-w-sm rounded-3xl border border-border/80 bg-background/98 p-6 shadow-2xl">
