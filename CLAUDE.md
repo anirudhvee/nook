@@ -39,7 +39,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 nook/
 ├── app/                  # Next.js App Router pages
 │   ├── page.tsx          # Home / discovery page
-│   ├── nook/[id]/        # Individual nook detail page
+│   ├── nook/[id]/        # Redirects to the discovery page with ?nook=<place_id>
 │   ├── passport/         # User's visited nooks (stamp collection)
 │   └── api/              # API routes
 │       ├── places/       # Google Places (New) proxy — nearby search
@@ -50,11 +50,13 @@ nook/
 ├── components/           # Shared UI components
 │   ├── ui/               # shadcn/ui primitives (do not edit directly)
 │   ├── map/              # Mapbox components
-│   └── nook/             # Nook-specific components (NookCard, NookDetailPanel, etc.)
+│   └── nook/             # Nook-specific components (NookDetailPanel, Navbar, etc.)
 ├── lib/                  # Utilities and clients
 │   ├── supabase.ts       # Supabase client (browser, server, service-role)
 │   ├── mapbox.ts         # Mapbox helpers
 │   └── utils.ts          # cn() and other shared utilities
+├── tests/                # Ad hoc unit tests until a full test runner is wired up
+│   └── unit/             # Lightweight logic tests (currently node:test + tsc)
 ├── types/                # Shared TypeScript types
 │   └── nook.ts           # NookPlace, NookType, FilterType
 └── public/               # Static assets
@@ -88,6 +90,8 @@ npm run dev    # start dev server (localhost:3000)
 npm run build  # production build
 npm run lint   # run ESLint
 ```
+
+There is **not yet** a standardized `npm test` script on `main`; current lightweight logic tests live under `tests/unit/` and are run ad hoc until Vitest / Playwright are set up.
 
 ---
 
@@ -204,3 +208,4 @@ laptop-friendly | not laptop-friendly
 - Google Places API (New) detail endpoint fields in use: `displayName`, `formattedAddress`, `addressComponents`, `rating`, `types`, `regularOpeningHours`, `reviewSummary`, `generativeSummary`, `reviews`.
 - gpt-4o-mini parses reviews and stores signals + summary in `work_signals`. Do not re-parse on every page load.
 - Always check `work_signals` cache before calling OpenAI. See cache behaviour above for TTL and retry rules.
+- `components/map/searchPillMatch.ts` contains the direct-enter Mapbox matching logic; keep that logic generic and data-driven, never hardcode special-case addresses.
