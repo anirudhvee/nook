@@ -9,16 +9,37 @@ import { cn } from '@/lib/utils'
 
 const SEARCH_TYPES = 'place,poi,neighborhood,address,locality,district,region'
 
+type SelectedLocation = {
+  lng: number
+  lat: number
+  name: string
+}
+
 type Props = {
+  isOpen: boolean
+  query: string
+  selectedLocation: SelectedLocation | null
   onSearchOpen: () => void
-  onSearchClose: () => void
+  onSearchCollapse: () => void
+  onSearchClear: () => void
+  onSelectedLocationEditStart: () => void
+  onQueryChange: (query: string) => void
   onLocationSelect: (lng: number, lat: number, name: string) => void
   userLocation: [number, number] | null
 }
 
-export function SearchPill({ onSearchOpen, onSearchClose, onLocationSelect, userLocation }: Props) {
-  const [isOpen, setIsOpen] = useState(false)
-  const [query, setQuery] = useState('')
+export function SearchPill({
+  isOpen,
+  query,
+  selectedLocation,
+  onSearchOpen,
+  onSearchCollapse,
+  onSearchClear,
+  onSelectedLocationEditStart,
+  onQueryChange,
+  onLocationSelect,
+  userLocation,
+}: Props) {
   const [suggestions, setSuggestions] = useState<SearchBoxSuggestion[]>([])
   const searchCoreRef = useRef(
     new SearchBoxCore({ accessToken: process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? '' })
@@ -26,30 +47,47 @@ export function SearchPill({ onSearchOpen, onSearchClose, onLocationSelect, user
   const sessionTokenRef = useRef(crypto.randomUUID())
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const focusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const hasSelectedLocation = selectedLocation !== null
 
   const openSearch = useCallback(() => {
-    setIsOpen(true)
     onSearchOpen()
-    setTimeout(() => inputRef.current?.focus(), 50)
   }, [onSearchOpen])
 
-  const closeSearch = useCallback(() => {
-    setIsOpen(false)
-    setQuery('')
+  const collapseSearch = useCallback(() => {
     setSuggestions([])
-    onSearchClose()
-  }, [onSearchClose])
+    onSearchCollapse()
+  }, [onSearchCollapse])
+
+  const clearSearch = useCallback(() => {
+    setSuggestions([])
+    onSearchClear()
+    sessionTokenRef.current = crypto.randomUUID()
+  }, [onSearchClear])
+
+  useEffect(() => {
+    if (!isOpen || hasSelectedLocation) return
+    focusTimeoutRef.current = setTimeout(() => inputRef.current?.focus(), 180)
+    return () => {
+      if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current)
+    }
+  }, [hasSelectedLocation, isOpen])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) closeSearch()
+      if (e.key === 'Escape' && isOpen) collapseSearch()
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, closeSearch])
+  }, [isOpen, collapseSearch])
 
   const fetchSuggestions = useCallback(async (q: string, loc: [number, number] | null) => {
-    if (q.trim().length < 3) { setSuggestions([]); return }
+    if (q.trim().length < 3) {
+      setSuggestions([])
+      return
+    }
+
     try {
       const response = await searchCoreRef.current.suggest(q, {
         sessionToken: sessionTokenRef.current,
@@ -62,12 +100,39 @@ export function SearchPill({ onSearchOpen, onSearchClose, onLocationSelect, user
     } catch { /* network error */ }
   }, [])
 
-  const handleInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value
-    setQuery(val)
+  useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => fetchSuggestions(val, userLocation), 300)
-  }, [fetchSuggestions, userLocation])
+
+    if (!isOpen || hasSelectedLocation) {
+      setSuggestions([])
+      return
+    }
+
+    if (query.trim().length < 3) {
+      setSuggestions([])
+      return
+    }
+
+    debounceRef.current = setTimeout(() => {
+      void fetchSuggestions(query, userLocation)
+    }, 300)
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [fetchSuggestions, hasSelectedLocation, isOpen, query, userLocation])
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current)
+    }
+  }, [])
+
+  const handleInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    if (hasSelectedLocation) onSelectedLocationEditStart()
+    onQueryChange(e.target.value)
+  }, [hasSelectedLocation, onQueryChange, onSelectedLocationEditStart])
 
   const handleSelect = useCallback(async (suggestion: SearchBoxSuggestion) => {
     try {
@@ -77,24 +142,17 @@ export function SearchPill({ onSearchOpen, onSearchClose, onLocationSelect, user
       const coords = retrieved.features[0]?.geometry?.coordinates as [number, number] | undefined
       if (!coords) return
       const [lng, lat] = coords
-      setQuery(suggestion.name)
+      onQueryChange(suggestion.name)
       setSuggestions([])
       onLocationSelect(lng, lat, suggestion.name)
       sessionTokenRef.current = crypto.randomUUID()
-      setTimeout(() => closeSearch(), 600)
     } catch { /* network error */ }
-  }, [onLocationSelect, closeSearch])
+  }, [onLocationSelect, onQueryChange])
 
   return (
     <div className="relative">
       {/* Pill */}
-      <div
-        className="flex items-center bg-white/90 backdrop-blur-sm rounded-full shadow border border-white/50 h-10 overflow-hidden"
-        style={{
-          width: isOpen ? '320px' : undefined,
-          transition: 'width 300ms ease',
-        }}
-      >
+      <div className="flex items-center bg-white/90 backdrop-blur-sm rounded-full shadow border border-white/50 h-10 overflow-hidden">
         {/* Logo */}
         <div className="flex items-center pl-4 pr-3 shrink-0">
           <LogoWordmark className="text-[1.4rem]" />
@@ -116,35 +174,46 @@ export function SearchPill({ onSearchOpen, onSearchClose, onLocationSelect, user
           <Search className="w-4 h-4 text-muted-foreground" />
         </button>
 
-        {/* Input — only mounted/visible when open */}
-        <input
-          ref={inputRef}
-          type="text"
-          value={query}
-          onChange={handleInput}
-          placeholder="search anywhere..."
-          aria-hidden={!isOpen}
-          className={cn(
-            'min-w-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60 text-foreground transition-[width,opacity] duration-300',
-            isOpen ? 'w-full opacity-100' : 'w-0 opacity-0 pointer-events-none'
-          )}
-        />
-
-        {/* Close button */}
-        <button
-          onClick={closeSearch}
-          aria-label="Close search"
-          className={cn(
-            'flex items-center justify-center shrink-0 text-muted-foreground hover:text-foreground transition-[opacity,width] duration-200',
-            isOpen ? 'w-9 opacity-100' : 'w-0 opacity-0 pointer-events-none'
-          )}
+        <div
+          className="flex items-center min-w-0 overflow-hidden"
+          style={{
+            maxWidth: isOpen ? '320px' : '0px',
+            transition: 'max-width 350ms cubic-bezier(0.4, 0, 0.2, 1)',
+            transitionDelay: isOpen ? '0ms' : '150ms',
+          }}
         >
-          <X className="w-4 h-4" />
-        </button>
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={handleInput}
+            placeholder="search anywhere..."
+            aria-hidden={!isOpen}
+            className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60 text-foreground"
+            style={{
+              opacity: isOpen ? 1 : 0,
+              transition: 'opacity 150ms ease',
+              transitionDelay: isOpen ? '150ms' : '0ms',
+            }}
+          />
+
+          <button
+            onClick={hasSelectedLocation ? clearSearch : collapseSearch}
+            aria-label={hasSelectedLocation ? 'Clear selected location' : 'Collapse search'}
+            className="flex items-center justify-center shrink-0 w-9 text-muted-foreground hover:text-foreground"
+            style={{
+              opacity: isOpen ? 1 : 0,
+              transition: 'opacity 150ms ease',
+              transitionDelay: isOpen ? '150ms' : '0ms',
+            }}
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Autocomplete dropdown */}
-      {isOpen && suggestions.length > 0 && (
+      {isOpen && !hasSelectedLocation && suggestions.length > 0 && (
         <div className="absolute top-[calc(100%+8px)] left-0 right-0 bg-background/95 backdrop-blur-sm rounded-xl shadow-xl border border-border overflow-hidden z-50">
           {suggestions.map((s, i) => (
             <button
