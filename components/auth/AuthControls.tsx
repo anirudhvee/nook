@@ -1,7 +1,14 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useId, useRef, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
 import { useRouter } from "next/navigation";
 import type {
   AuthChangeEvent,
@@ -215,6 +222,37 @@ export function AuthControls({ variant }: AuthControlsProps) {
     setIsMagicLinkLoading(false);
   };
 
+  const handleMagicLinkFormSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!event.currentTarget.reportValidity()) {
+      return;
+    }
+
+    void handleSendMagicLink();
+  };
+
+  const handleEmailInputKeyDown = (
+    event: KeyboardEvent<HTMLInputElement>
+  ) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+
+    const form = event.currentTarget.form;
+    if (!form) {
+      return;
+    }
+
+    event.preventDefault();
+
+    if (!form.reportValidity()) {
+      return;
+    }
+
+    form.requestSubmit();
+  };
+
   const handleSignOut = async () => {
     setIsSigningOut(true);
     setStatusMessage(null);
@@ -404,10 +442,7 @@ export function AuthControls({ variant }: AuthControlsProps) {
 
               <form
                 className="space-y-3"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void handleSendMagicLink();
-                }}
+                onSubmit={handleMagicLinkFormSubmit}
               >
                 <label
                   htmlFor={emailInputId}
@@ -418,8 +453,10 @@ export function AuthControls({ variant }: AuthControlsProps) {
                 <input
                   id={emailInputId}
                   type="email"
+                  required
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
+                  onKeyDown={handleEmailInputKeyDown}
                   placeholder="you@somewhere.com"
                   autoComplete="email"
                   className={cn(
