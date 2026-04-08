@@ -3,9 +3,19 @@
 import Image from "next/image";
 import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
+import type {
+  AuthChangeEvent,
+  Session,
+  User,
+  UserIdentity,
+} from "@supabase/supabase-js";
 import { LoaderCircle, LogOut } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
+import {
+  getUserAvatarUrl,
+  getUserDisplayName,
+  getUserInitials,
+} from "@/lib/auth-profile";
 import { createBrowserSupabaseClient } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
@@ -13,25 +23,21 @@ type AuthControlsProps = {
   variant: "map" | "navbar";
 };
 
-function getUserInitials(user: User | null) {
-  const source =
-    typeof user?.user_metadata.full_name === "string"
-      ? user.user_metadata.full_name
-      : typeof user?.user_metadata.name === "string"
-        ? user.user_metadata.name
-        : typeof user?.email === "string"
-          ? user.email
-          : "";
+function getIdentityProviders(user: User | null, identities: UserIdentity[]) {
+  const fromIdentities = identities.map((identity) => identity.provider);
+  const fromMetadata = user?.app_metadata.providers ?? [];
+  const primaryProvider =
+    typeof user?.app_metadata.provider === "string"
+      ? [user.app_metadata.provider]
+      : [];
 
-  const parts = source
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-
-  if (parts.length === 0) return "N";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-
-  return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
+  return Array.from(
+    new Set(
+      [...fromIdentities, ...fromMetadata, ...primaryProvider]
+        .filter(Boolean)
+        .map((provider) => provider.toLowerCase())
+    )
+  );
 }
 
 export function AuthControls({ variant }: AuthControlsProps) {
@@ -40,6 +46,7 @@ export function AuthControls({ variant }: AuthControlsProps) {
   const emailInputId = useId();
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [user, setUser] = useState<User | null>(null);
+  const [identities, setIdentities] = useState<UserIdentity[]>([]);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [email, setEmail] = useState("");
@@ -47,6 +54,7 @@ export function AuthControls({ variant }: AuthControlsProps) {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isMagicLinkLoading, setIsMagicLinkLoading] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const trimmedEmail = email.trim();
 
   useEffect(() => {
     let isMounted = true;
@@ -61,6 +69,7 @@ export function AuthControls({ variant }: AuthControlsProps) {
       }
 
       setUser(data.user);
+      setIdentities(data.user?.identities ?? []);
     };
 
     void loadUser();
@@ -70,13 +79,19 @@ export function AuthControls({ variant }: AuthControlsProps) {
     } = supabase.auth.onAuthStateChange(
       (_event: AuthChangeEvent, session: Session | null) => {
         if (!isMounted) return;
-        setUser(session?.user ?? null);
         setEmail("");
         setIsAuthModalOpen(false);
         setIsDropdownOpen(false);
         setStatusMessage(null);
         setIsGoogleLoading(false);
         setIsMagicLinkLoading(false);
+        setUser(session?.user ?? null);
+        setIdentities(session?.user?.identities ?? []);
+
+        if (session?.user) {
+          void loadUser();
+        }
+
         router.refresh();
       }
     );
@@ -153,12 +168,21 @@ export function AuthControls({ variant }: AuthControlsProps) {
     setIsGoogleLoading(true);
     setStatusMessage(null);
 
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-      },
-    });
+    const authAction = user
+      ? supabase.auth.linkIdentity({
+          provider: "google",
+          options: {
+            redirectTo: `${window.location.origin}/auth/callback`,
+          },
+        })
+      : supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: {
+            redirectTo: `${window.location.origin}/auth/callback`,
+          },
+        });
+
+    const { error } = await authAction;
 
     if (error) {
       setStatusMessage(error.message);
@@ -167,11 +191,15 @@ export function AuthControls({ variant }: AuthControlsProps) {
   };
 
   const handleSendMagicLink = async () => {
+    if (!trimmedEmail || isGoogleLoading || isMagicLinkLoading) {
+      return;
+    }
+
     setIsMagicLinkLoading(true);
     setStatusMessage(null);
 
     const { error } = await supabase.auth.signInWithOtp({
-      email,
+      email: trimmedEmail,
       options: {
         emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
@@ -202,10 +230,10 @@ export function AuthControls({ variant }: AuthControlsProps) {
     setIsSigningOut(false);
   };
 
-  const avatarUrl =
-    typeof user?.user_metadata.avatar_url === "string"
-      ? user.user_metadata.avatar_url
-      : null;
+  const avatarUrl = getUserAvatarUrl(user, identities);
+  const displayName = getUserDisplayName(user, identities);
+  const linkedProviders = getIdentityProviders(user, identities);
+  const hasGoogleIdentity = linkedProviders.includes("google");
 
   const passportClasses =
     variant === "map"
@@ -258,7 +286,7 @@ export function AuthControls({ variant }: AuthControlsProps) {
                   referrerPolicy="no-referrer"
                 />
               ) : (
-                <span>{getUserInitials(user)}</span>
+                <span>{getUserInitials(user, identities)}</span>
               )}
             </button>
 
@@ -266,7 +294,7 @@ export function AuthControls({ variant }: AuthControlsProps) {
               <div className={dropdownClasses} role="menu">
                 <div className="px-3 py-2">
                   <p className="text-sm font-medium leading-none">
-                    {user.user_metadata.full_name ?? user.email ?? "Signed in"}
+                    {displayName || user.email || "Signed in"}
                   </p>
                   {user.email && (
                     <p className="mt-1 text-xs text-muted-foreground">
@@ -274,6 +302,24 @@ export function AuthControls({ variant }: AuthControlsProps) {
                     </p>
                   )}
                 </div>
+                {!hasGoogleIdentity && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={handleGoogleSignIn}
+                    disabled={isGoogleLoading || isSigningOut}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-60"
+                  >
+                    {isGoogleLoading ? (
+                      <LoaderCircle className="size-4 animate-spin" />
+                    ) : (
+                      <span className="flex size-4 items-center justify-center rounded-full border border-border text-[10px] font-semibold">
+                        G
+                      </span>
+                    )}
+                    Link Google account
+                  </button>
+                )}
                 <button
                   type="button"
                   role="menuitem"
@@ -288,6 +334,11 @@ export function AuthControls({ variant }: AuthControlsProps) {
                   )}
                   Sign out
                 </button>
+                {statusMessage && (
+                  <p className="px-3 pb-2 pt-1 text-xs text-muted-foreground">
+                    {statusMessage}
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -318,6 +369,10 @@ export function AuthControls({ variant }: AuthControlsProps) {
               <p className="text-sm text-muted-foreground">
                 Save your passport and keep your work spots synced.
               </p>
+              <p className="text-xs text-muted-foreground">
+                Use the same email for Google and magic link to keep one Nook
+                account.
+              </p>
             </div>
 
             <div className="mt-6 space-y-4">
@@ -347,7 +402,13 @@ export function AuthControls({ variant }: AuthControlsProps) {
                 <div className="h-px flex-1 bg-border" />
               </div>
 
-              <div className="space-y-3">
+              <form
+                className="space-y-3"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handleSendMagicLink();
+                }}
+              >
                 <label
                   htmlFor={emailInputId}
                   className="text-sm font-medium text-foreground"
@@ -360,16 +421,18 @@ export function AuthControls({ variant }: AuthControlsProps) {
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
                   placeholder="you@somewhere.com"
+                  autoComplete="email"
                   className={cn(
                     "h-11 w-full rounded-2xl border border-input bg-card px-4 text-sm outline-none transition-colors",
                     "placeholder:text-muted-foreground focus:border-primary focus:ring-3 focus:ring-primary/15"
                   )}
                 />
                 <Button
-                  type="button"
+                  type="submit"
                   size="lg"
-                  onClick={handleSendMagicLink}
-                  disabled={!email || isGoogleLoading || isMagicLinkLoading}
+                  disabled={
+                    !trimmedEmail || isGoogleLoading || isMagicLinkLoading
+                  }
                   className="h-11 w-full rounded-2xl"
                 >
                   {isMagicLinkLoading && (
@@ -377,7 +440,7 @@ export function AuthControls({ variant }: AuthControlsProps) {
                   )}
                   Send magic link
                 </Button>
-              </div>
+              </form>
             </div>
 
             {statusMessage && (
