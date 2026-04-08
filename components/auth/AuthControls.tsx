@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
   type FormEvent,
-  type KeyboardEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { useRouter } from "next/navigation";
 import type {
@@ -128,7 +128,7 @@ export function AuthControls({ variant }: AuthControlsProps) {
   useEffect(() => {
     if (!isAuthModalOpen) return;
 
-    const handleEscape = (event: KeyboardEvent) => {
+    const handleEscape = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
         setEmail("");
         setStatusMessage(null);
@@ -233,7 +233,7 @@ export function AuthControls({ variant }: AuthControlsProps) {
   };
 
   const handleEmailInputKeyDown = (
-    event: KeyboardEvent<HTMLInputElement>
+    event: ReactKeyboardEvent<HTMLInputElement>
   ) => {
     if (event.key !== "Enter") {
       return;
@@ -287,6 +287,7 @@ export function AuthControls({ variant }: AuthControlsProps) {
     variant === "map"
       ? "flex size-10 items-center justify-center overflow-hidden rounded-full border border-white/60 bg-white/90 text-sm font-semibold text-foreground shadow backdrop-blur-sm transition-colors hover:bg-white"
       : "flex size-9 items-center justify-center overflow-hidden rounded-full border border-border bg-background text-sm font-semibold text-foreground transition-colors hover:bg-muted";
+  const avatarImageSize = variant === "map" ? 40 : 36;
 
   const dropdownClasses =
     variant === "map"
@@ -318,9 +319,9 @@ export function AuthControls({ variant }: AuthControlsProps) {
                 <Image
                   src={avatarUrl}
                   alt=""
-                  fill
-                  sizes={variant === "map" ? "40px" : "36px"}
-                  className="object-cover"
+                  width={avatarImageSize}
+                  height={avatarImageSize}
+                  className="size-full object-cover"
                   referrerPolicy="no-referrer"
                 />
               ) : (
