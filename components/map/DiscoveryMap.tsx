@@ -281,6 +281,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
   // Distinguishes auto-trigger on map load from a manual geolocate button press
   const geolocateIsAutoTriggerRef = useRef(false)
   const geoBtnPatchedRef = useRef(false)
+  const bannerDismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [nearbyNooks, setNearbyNooks] = useState<NookPlace[]>([])
   const [searchedNooks, setSearchedNooks] = useState<NookPlace[]>([])
@@ -311,8 +312,12 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
 
   useEffect(() => {
     triggerBannerAttentionRef.current = () => {
+      if (bannerDismissTimerRef.current !== null) {
+        clearTimeout(bannerDismissTimerRef.current)
+        bannerDismissTimerRef.current = null
+        setLocBannerExiting(false)
+      }
       if (showLocDeniedBannerRef.current) {
-        // Banner already visible — shake it to draw attention
         setLocBannerShaking(false)
         requestAnimationFrame(() => setLocBannerShaking(true))
       } else {
@@ -619,6 +624,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     map.addControl(geolocate, 'bottom-right')
 
     geolocate.on('geolocate', (e: GeolocationPosition) => {
+      geolocateIsAutoTriggerRef.current = false
       const coords: [number, number] = [e.coords.longitude, e.coords.latitude]
 
       try {
@@ -677,6 +683,10 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
       if (wasAuto) {
         const dismissed = localStorage.getItem('nook_loc_denied_dismissed') === '1'
         if (dismissed) return
+      }
+      if (bannerDismissTimerRef.current !== null) {
+        clearTimeout(bannerDismissTimerRef.current)
+        bannerDismissTimerRef.current = null
       }
       setLocBannerExiting(false)
       setShowLocDeniedBanner(true)
@@ -1071,7 +1081,10 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
               onClick={() => {
                 setLocBannerExiting(true)
                 try { localStorage.setItem('nook_loc_denied_dismissed', '1') } catch {}
-                setTimeout(() => setShowLocDeniedBanner(false), 300)
+                bannerDismissTimerRef.current = setTimeout(() => {
+                  setShowLocDeniedBanner(false)
+                  bannerDismissTimerRef.current = null
+                }, 300)
               }}
               className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
               aria-label="Dismiss"
