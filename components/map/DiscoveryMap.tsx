@@ -563,7 +563,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     } catch {}
 
     const startCenter = cachedCenter ?? initialCenterRef.current
-    const startZoom = cachedCenter ? 14 : 11
+    const startZoom = cachedCenter ? 14 : 10
 
     mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? ''
 
