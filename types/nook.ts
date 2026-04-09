@@ -11,4 +11,5 @@ export interface NookPlace {
   type: NookType
   rating?: number
   workSignals: string[]
+  photoName?: string
 }

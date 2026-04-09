@@ -4,7 +4,19 @@ import type { CSSProperties } from 'react'
 import { useRef, useEffect, useState, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import mapboxgl from 'mapbox-gl'
-import { ChevronUp, ScanSearch, MapPinOff, X } from 'lucide-react'
+import {
+  ChevronUp,
+  ScanSearch,
+  MapPinOff,
+  X,
+  Heart,
+  MapPin,
+  Star,
+  Coffee,
+  BookOpen,
+  Users,
+  Building2,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AuthControls } from '@/components/auth/AuthControls'
 import type { NookPlace, NookType, FilterType } from '@/types/nook'
@@ -116,6 +128,22 @@ function toGeoJSON(nooks: NookPlace[]) {
   }
 }
 
+const TYPE_LABELS: Record<NookType, string> = {
+  cafe: 'café',
+  library: 'library',
+  coworking: 'coworking',
+  other: 'other',
+}
+
+function NookTypeIcon({ type, className }: { type: NookType; className?: string }) {
+  switch (type) {
+    case 'cafe': return <Coffee className={className} />
+    case 'library': return <BookOpen className={className} />
+    case 'coworking': return <Users className={className} />
+    default: return <Building2 className={className} />
+  }
+}
+
 function setMarkerColor(marker: mapboxgl.Marker, color: string) {
   const path = marker.getElement().querySelector<SVGPathElement>('path')
   if (path) path.style.fill = color
@@ -213,7 +241,7 @@ function PlacesPanel({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-2">
+      <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-2.5">
         {placesWithDist.map(nook => {
           const isSelected = nook.id === selectedId
           return (
@@ -221,30 +249,52 @@ function PlacesPanel({
               key={nook.id}
               onClick={() => onSelectNook(nook)}
               className={cn(
-                'w-full text-left p-3 rounded-xl border transition-colors',
+                'w-full text-left rounded-xl border overflow-hidden transition-all',
                 isSelected
-                  ? 'bg-primary/10 border-primary/25'
-                  : 'bg-card border-border hover:bg-muted/60'
+                  ? 'ring-2 ring-primary/30 border-primary/25'
+                  : 'bg-card border-border hover:shadow-md',
               )}
             >
-              <p className="font-semibold text-sm leading-snug">{nook.name}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {[nook.type, nook.neighborhood, nook.dist != null ? formatDist(nook.dist, useMiles) : null]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </p>
-              {nook.workSignals.length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-2">
-                  {nook.workSignals.map(signal => (
-                    <span
-                      key={signal}
-                      className="px-2 py-0.5 rounded-full text-xs bg-primary/10 text-primary border border-primary/20"
-                    >
-                      {signal}
-                    </span>
-                  ))}
+              <div className="relative w-full h-[160px] bg-muted">
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <NookTypeIcon type={nook.type} className="w-8 h-8 text-muted-foreground/25" />
                 </div>
-              )}
+                {nook.photoName && (
+                  <img
+                    src={`/api/places/photo?ref=${encodeURIComponent(nook.photoName)}`}
+                    alt={nook.name}
+                    className="absolute inset-0 w-full h-full object-cover"
+                    loading="lazy"
+                  />
+                )}
+                <span className="absolute top-2 right-2 p-1.5 rounded-full bg-white/80 backdrop-blur-sm text-muted-foreground">
+                  <Heart className="w-3.5 h-3.5" />
+                </span>
+              </div>
+
+              <div className="p-3">
+                <p className="font-semibold text-sm leading-snug">{nook.name}</p>
+                <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{nook.address}</p>
+
+                <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
+                  {nook.dist != null && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-muted text-muted-foreground">
+                      <MapPin className="w-3 h-3" />
+                      {formatDist(nook.dist, useMiles)}
+                    </span>
+                  )}
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-muted text-muted-foreground">
+                    <NookTypeIcon type={nook.type} className="w-3 h-3" />
+                    {TYPE_LABELS[nook.type]}
+                  </span>
+                  {nook.rating != null && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-muted text-muted-foreground">
+                      <Star className="w-3 h-3" />
+                      {nook.rating}
+                    </span>
+                  )}
+                </div>
+              </div>
             </button>
           )
         })}

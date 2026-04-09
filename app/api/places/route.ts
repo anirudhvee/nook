@@ -32,6 +32,7 @@ interface PlacesApiPlace {
   rating?: number
   types?: string[]
   businessStatus?: string
+  photos?: Array<{ name: string; widthPx: number; heightPx: number }>
 }
 
 interface PlacesApiResponse {
@@ -82,7 +83,7 @@ export async function GET(request: NextRequest) {
       'Content-Type': 'application/json',
       'X-Goog-Api-Key': apiKey,
       'X-Goog-FieldMask':
-        'places.id,places.displayName,places.formattedAddress,places.addressComponents,places.location,places.rating,places.types,places.businessStatus',
+        'places.id,places.displayName,places.formattedAddress,places.addressComponents,places.location,places.rating,places.types,places.businessStatus,places.photos',
     },
     body: JSON.stringify(body),
   })
@@ -109,6 +110,7 @@ export async function GET(request: NextRequest) {
       type: inferNookType(p.types ?? []),
       rating: p.rating,
       workSignals: [],
+      photoName: p.photos?.[0]?.name,
     }))
 
   return NextResponse.json({ places })
