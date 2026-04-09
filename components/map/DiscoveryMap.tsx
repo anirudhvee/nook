@@ -4,7 +4,7 @@ import type { CSSProperties } from 'react'
 import { useRef, useEffect, useState, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import mapboxgl from 'mapbox-gl'
-import { ChevronUp, ScanSearch } from 'lucide-react'
+import { ChevronUp, ScanSearch, MapPinOff, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AuthControls } from '@/components/auth/AuthControls'
 import type { NookPlace, NookType, FilterType } from '@/types/nook'
@@ -18,9 +18,6 @@ import {
   createCirclePolygon,
   getCircleBounds,
 } from '@/components/map/radiusUtils'
-
-const SF_CENTER: [number, number] = [-122.4194, 37.7749]
-const GEO_TIMEOUT_MS = 8000
 
 const SRC = 'nooks'
 const L_CLUSTERS = 'clusters'
@@ -262,10 +259,11 @@ function PlacesPanel({
   )
 }
 
-export function DiscoveryMap() {
+export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number] }) {
   const searchParams = useSearchParams()
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<mapboxgl.Map | null>(null)
+  const initialCenterRef = useRef<[number, number]>(initialCenter)
   const mapLoadedRef = useRef(false)
   const realUserLocRef = useRef<[number, number] | null>(null)
   const nearbyOriginRef = useRef<[number, number] | null>(null)
@@ -280,6 +278,10 @@ export function DiscoveryMap() {
   const nearbyRequestIdRef = useRef(0)
   const searchedRequestIdRef = useRef(0)
   const radiusMRef = useRef(DEFAULT_RADIUS_M)
+  // Distinguishes auto-trigger on map load from a manual geolocate button press
+  const geolocateIsAutoTriggerRef = useRef(false)
+  const geoBtnPatchedRef = useRef(false)
+  const bannerDismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [nearbyNooks, setNearbyNooks] = useState<NookPlace[]>([])
   const [searchedNooks, setSearchedNooks] = useState<NookPlace[]>([])
@@ -300,6 +302,42 @@ export function DiscoveryMap() {
   })
   const [radiusM, setRadiusM] = useState(DEFAULT_RADIUS_M)
   const [isRadiusActive, setIsRadiusActive] = useState(false)
+  const [showLocDeniedBanner, setShowLocDeniedBanner] = useState(false)
+  const [locBannerExiting, setLocBannerExiting] = useState(false)
+  const [locBannerShaking, setLocBannerShaking] = useState(false)
+  const showLocDeniedBannerRef = useRef(false)
+  const triggerBannerAttentionRef = useRef<() => void>(() => {})
+
+  useEffect(() => { showLocDeniedBannerRef.current = showLocDeniedBanner }, [showLocDeniedBanner])
+
+  useEffect(() => {
+    triggerBannerAttentionRef.current = () => {
+      if (bannerDismissTimerRef.current !== null) {
+        clearTimeout(bannerDismissTimerRef.current)
+        bannerDismissTimerRef.current = null
+        setLocBannerExiting(false)
+      }
+      if (showLocDeniedBannerRef.current) {
+        setLocBannerShaking(false)
+        requestAnimationFrame(() => setLocBannerShaking(true))
+      } else {
+        setLocBannerExiting(false)
+        setShowLocDeniedBanner(true)
+      }
+    }
+  })
+
+  // Show banner if permission is already denied when the page loads.
+  // In-session denials are caught by the geolocate error listener in the map useEffect.
+  useEffect(() => {
+    if (!navigator.permissions) return
+    const dismissed = localStorage.getItem('nook_loc_denied_dismissed') === '1'
+    if (dismissed) return
+    navigator.permissions
+      .query({ name: 'geolocation' })
+      .then(result => { if (result.state === 'denied') setShowLocDeniedBanner(true) })
+      .catch(() => {})
+  }, [])
 
   const fetchPlaces = useCallback(async (lat: number, lng: number, type: FilterType) => {
     const qs = new URLSearchParams({
@@ -453,7 +491,7 @@ export function DiscoveryMap() {
     mapSyncModeRef.current = 'nearby'
     setIsSearchOpen(false)
 
-    const target = realUserLocRef.current ?? nearbyOriginRef.current ?? SF_CENTER
+    const target = realUserLocRef.current ?? nearbyOriginRef.current ?? initialCenterRef.current
     if (isRadiusActive) {
       fitToCircle(target, radiusMRef.current)
     } else {
@@ -551,13 +589,27 @@ export function DiscoveryMap() {
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return
 
+    let cachedCenter: [number, number] | null = null
+    try {
+      const stored = localStorage.getItem('nook_loc')
+      if (stored) {
+        const { lng, lat, ts } = JSON.parse(stored) as { lng: number; lat: number; ts: number }
+        if (Date.now() - ts < 30 * 24 * 60 * 60 * 1000 && isFinite(lng) && isFinite(lat)) {
+          cachedCenter = [lng, lat]
+        }
+      }
+    } catch {}
+
+    const startCenter = cachedCenter ?? initialCenterRef.current
+    const startZoom = cachedCenter ? 14 : 10
+
     mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? ''
 
     const map = new mapboxgl.Map({
       container: mapContainerRef.current,
       style: 'mapbox://styles/mapbox/outdoors-v12',
-      center: SF_CENTER,
-      zoom: 14,
+      center: startCenter,
+      zoom: startZoom,
       attributionControl: false,
     })
 
@@ -571,28 +623,73 @@ export function DiscoveryMap() {
     })
     map.addControl(geolocate, 'bottom-right')
 
-    let geoResolved = false
-    let fallbackTimer: ReturnType<typeof setTimeout>
-
     geolocate.on('geolocate', (e: GeolocationPosition) => {
-      geoResolved = true
-      clearTimeout(fallbackTimer)
-
+      geolocateIsAutoTriggerRef.current = false
       const coords: [number, number] = [e.coords.longitude, e.coords.latitude]
+
+      try {
+        localStorage.setItem('nook_loc', JSON.stringify({ lng: coords[0], lat: coords[1], ts: Date.now() }))
+      } catch {}
+
+      // Always update location tracking — these drive distance display and restoreNearbyView
       realUserLocRef.current = coords
       nearbyOriginRef.current = coords
       setRealUserLoc(coords)
       setNearbyOrigin(coords)
-      void loadNearbyPlaces(coords, 'all', { mapTarget: 'nearby', updateMap: true })
+
+      // Only move the camera and reload places if GPS puts us somewhere meaningfully different
+      // from where we already opened (avoids no-op fly + redundant API call for returning users,
+      // and avoids hijacking the camera if the user is already browsing a searched location)
+      const movedSignificantly = distanceM(
+        [startCenter[1], startCenter[0]],
+        [coords[1], coords[0]]
+      ) > 200
+
+      if (movedSignificantly) {
+        if (mapSyncModeRef.current === 'nearby') {
+          map.flyTo({ center: coords, zoom: 14, duration: 1500 })
+        }
+        void loadNearbyPlaces(coords, 'all', { mapTarget: 'nearby', updateMap: true })
+      }
     })
 
-    geolocate.on('error', () => {
-      if (geoResolved) return
-      geoResolved = true
-      clearTimeout(fallbackTimer)
-      nearbyOriginRef.current = SF_CENTER
-      setNearbyOrigin(SF_CENTER)
-      void loadNearbyPlaces(SF_CENTER, 'all', { mapTarget: 'nearby', updateMap: true })
+    geolocate.on('error', (e: GeolocationPositionError) => {
+      // code 1 = PERMISSION_DENIED
+      if (e.code !== 1) return
+      const wasAuto = geolocateIsAutoTriggerRef.current
+      geolocateIsAutoTriggerRef.current = false
+
+      // Mapbox disables the geolocate button when permission is denied so clicks never fire.
+      // Patch it once: remove disabled and wire a click handler that re-shows the banner.
+      if (!geoBtnPatchedRef.current) {
+        const geoBtn = map
+          .getContainer()
+          .querySelector('.mapboxgl-ctrl-geolocate') as HTMLButtonElement | null
+        if (geoBtn) {
+          // Remove the HTML disabled attribute so clicks fire, but keep the
+          // visual disabled appearance so it's clear something is wrong
+          geoBtn.disabled = false
+          geoBtn.style.opacity = '0.5'
+          geoBtn.style.cursor = 'pointer'
+          geoBtn.addEventListener('click', () => {
+            triggerBannerAttentionRef.current()
+          })
+          geoBtnPatchedRef.current = true
+        }
+      }
+
+      // Auto-trigger on map load respects the dismissed preference —
+      // a manual button press always re-shows the banner so the user knows why it failed
+      if (wasAuto) {
+        const dismissed = localStorage.getItem('nook_loc_denied_dismissed') === '1'
+        if (dismissed) return
+      }
+      if (bannerDismissTimerRef.current !== null) {
+        clearTimeout(bannerDismissTimerRef.current)
+        bannerDismissTimerRef.current = null
+      }
+      setLocBannerExiting(false)
+      setShowLocDeniedBanner(true)
     })
 
     map.on('load', () => {
@@ -733,21 +830,18 @@ export function DiscoveryMap() {
         map.getCanvas().style.cursor = ''
       })
 
+      nearbyOriginRef.current = startCenter
+      setNearbyOrigin(startCenter)
+      void loadNearbyPlaces(startCenter, 'all', { mapTarget: 'nearby', updateMap: true })
+
+      geolocateIsAutoTriggerRef.current = true
       geolocate.trigger()
-      fallbackTimer = setTimeout(() => {
-        if (geoResolved) return
-        geoResolved = true
-        nearbyOriginRef.current = SF_CENTER
-        setNearbyOrigin(SF_CENTER)
-        void loadNearbyPlaces(SF_CENTER, 'all', { mapTarget: 'nearby', updateMap: true })
-      }, GEO_TIMEOUT_MS)
     })
 
     mapRef.current = map
     const pointMarkers = pointMarkersRef.current
 
     return () => {
-      clearTimeout(fallbackTimer)
       pointMarkers.forEach(marker => marker.remove())
       pointMarkers.clear()
       map.remove()
@@ -795,7 +889,7 @@ export function DiscoveryMap() {
       return
     }
 
-    const currentNearbyOrigin = nearbyOriginRef.current ?? SF_CENTER
+    const currentNearbyOrigin = nearbyOriginRef.current ?? initialCenterRef.current
     const currentSelectedSearchLocation = selectedSearchLocationRef.current
 
     void loadNearbyPlaces(currentNearbyOrigin, filter, { mapTarget: 'nearby', updateMap: true })
@@ -826,7 +920,7 @@ export function DiscoveryMap() {
 
     const center: [number, number] = selectedSearchLocation
       ? [selectedSearchLocation.lng, selectedSearchLocation.lat]
-      : (nearbyOrigin ?? SF_CENTER)
+      : (nearbyOrigin ?? initialCenterRef.current)
 
     src.setData({ type: 'FeatureCollection', features: [createCirclePolygon(center, radiusM)] })
     fitToCircle(center, radiusM)
@@ -837,7 +931,7 @@ export function DiscoveryMap() {
     if (!isRadiusActive) return
 
     const timer = setTimeout(() => {
-      const origin = nearbyOriginRef.current ?? SF_CENTER
+      const origin = nearbyOriginRef.current ?? initialCenterRef.current
       void loadNearbyPlaces(origin, filter, {
         mapTarget: 'nearby',
         updateMap: mapSyncModeRef.current === 'nearby',
@@ -955,6 +1049,51 @@ export function DiscoveryMap() {
           />
         )}
       </div>
+
+      {showLocDeniedBanner && (
+        <div
+          className={cn(
+            'absolute top-[60px] left-1/2 -translate-x-1/2 z-30 px-4 w-full max-w-md pointer-events-none duration-300',
+            locBannerExiting
+              ? 'animate-out fade-out slide-out-to-top-2'
+              : 'animate-in fade-in slide-in-from-top-2',
+          )}
+        >
+          <div
+            className={cn(
+              'pointer-events-auto bg-card border border-border/70 rounded-2xl shadow-md px-4 py-3 flex items-center gap-3',
+              locBannerShaking && 'banner-shake',
+            )}
+            onAnimationEnd={() => setLocBannerShaking(false)}
+          >
+            <div className="shrink-0 rounded-full bg-muted p-1.5">
+              <MapPinOff className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-foreground leading-snug">
+                Location access is blocked
+              </p>
+              <p className="text-sm text-muted-foreground mt-0.5 leading-snug">
+                Enable it in your browser settings to find nooks near you. You can still search any location.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                setLocBannerExiting(true)
+                try { localStorage.setItem('nook_loc_denied_dismissed', '1') } catch {}
+                bannerDismissTimerRef.current = setTimeout(() => {
+                  setShowLocDeniedBanner(false)
+                  bannerDismissTimerRef.current = null
+                }, 300)
+              }}
+              className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+              aria-label="Dismiss"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {(detailNook || showSearchResultsPanel) && (
         <div

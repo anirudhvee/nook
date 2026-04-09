@@ -1,18 +1,20 @@
-'use client'
-
-import dynamic from 'next/dynamic'
+import { headers } from 'next/headers'
 import { Suspense } from 'react'
+import { DiscoveryMapLoader } from '@/components/map/DiscoveryMapLoader'
 
-// Mapbox GL accesses window/document — must be client-only (ssr: false requires a Client Component in Next 16)
-const DiscoveryMap = dynamic(
-  () => import('@/components/map/DiscoveryMap').then(m => m.DiscoveryMap),
-  { ssr: false }
-)
 
-export default function HomePage() {
+const SF_FALLBACK: [number, number] = [-122.4194, 37.7749]
+
+export default async function HomePage() {
+  const h = await headers()
+  const lat = parseFloat(h.get('x-vercel-ip-latitude') ?? '')
+  const lng = parseFloat(h.get('x-vercel-ip-longitude') ?? '')
+  const initialCenter: [number, number] =
+    isFinite(lat) && isFinite(lng) ? [lng, lat] : SF_FALLBACK
+
   return (
     <Suspense fallback={<div className="h-screen w-screen bg-muted" />}>
-      <DiscoveryMap />
+      <DiscoveryMapLoader initialCenter={initialCenter} />
     </Suspense>
   )
 }
