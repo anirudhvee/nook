@@ -4,6 +4,7 @@ import { findStreetTypeIndex } from './searchPillTokens'
 
 export type SuggestionFallback = {
   addressTokens: string[]
+  promotionTokens: string[]
   query: string
 }
 
@@ -43,13 +44,15 @@ function findAddressHouseNumberIndex(tokens: string[]): number {
 function buildSuggestionFallbackResult(
   query: string,
   fallback: string,
-  addressTokens: string[]
+  addressTokens: string[],
+  promotionTokens: string[]
 ): SuggestionFallback | null {
   const trimmedQuery = query.trim()
   if (!fallback || fallback === trimmedQuery) return null
 
   return {
     addressTokens: normalizeTokens(addressTokens),
+    promotionTokens: normalizeTokens(promotionTokens),
     query: fallback,
   }
 }
@@ -73,7 +76,8 @@ function buildAddressFallback(query: string): SuggestionFallback | null {
     return buildSuggestionFallbackResult(
       query,
       fallback,
-      tokens.slice(numberIndex, streetTypeIndex + 1)
+      tokens.slice(numberIndex, streetTypeIndex + 1),
+      tokens.slice(0, numberIndex)
     )
   }
 
@@ -83,7 +87,8 @@ function buildAddressFallback(query: string): SuggestionFallback | null {
   return buildSuggestionFallbackResult(
     query,
     fallback,
-    tokens.slice(numberIndex, streetTypeIndex + 1)
+    tokens.slice(numberIndex, streetTypeIndex + 1),
+    tokens.slice(streetTypeIndex + 1)
   )
 }
 
@@ -106,7 +111,8 @@ function buildPartialAddressFallback(query: string): SuggestionFallback | null {
   return buildSuggestionFallbackResult(
     query,
     fallback,
-    tokens.slice(numberIndex)
+    tokens.slice(numberIndex),
+    tokens.slice(0, numberIndex)
   )
 }
 
@@ -137,6 +143,24 @@ function getSuggestionAddressCandidates(suggestion: SearchBoxSuggestion): string
   ].filter(Boolean)
 }
 
+function getSuggestionNameCandidates(suggestion: SearchBoxSuggestion): string[] {
+  return [
+    typeof suggestion.name === 'string' ? suggestion.name : '',
+    typeof suggestion.name_preferred === 'string' ? suggestion.name_preferred : '',
+    typeof suggestion.brand === 'string' ? suggestion.brand : '',
+  ].filter(Boolean)
+}
+
+function matchesAddressToken(queryToken: string, candidateToken: string, index: number): boolean {
+  if (!candidateToken) return false
+
+  if (index === 0 && isHouseNumberToken(queryToken)) {
+    return candidateToken === queryToken
+  }
+
+  return candidateToken.startsWith(queryToken)
+}
+
 function matchesAddressTokens(suggestion: SearchBoxSuggestion, addressTokens: string[]): boolean {
   if (suggestion.feature_type !== 'poi' || addressTokens.length === 0) return false
 
@@ -145,6 +169,19 @@ function matchesAddressTokens(suggestion: SearchBoxSuggestion, addressTokens: st
     if (candidateTokens.length < addressTokens.length) return false
 
     return addressTokens.every((token, index) => {
+      return matchesAddressToken(token, candidateTokens[index] ?? '', index)
+    })
+  })
+}
+
+function matchesPromotionTokens(suggestion: SearchBoxSuggestion, promotionTokens: string[]): boolean {
+  if (promotionTokens.length === 0) return true
+
+  return getSuggestionNameCandidates(suggestion).some(candidate => {
+    const candidateTokens = normalizeSearchText(candidate).split(' ').filter(Boolean)
+    if (candidateTokens.length < promotionTokens.length) return false
+
+    return promotionTokens.every((token, index) => {
       return candidateTokens[index]?.startsWith(token)
     })
   })
@@ -173,7 +210,10 @@ export function mergeSuggestionResults(
   limit: number
 ): SearchBoxSuggestion[] {
   const promotedFallback = secondary.filter(suggestion => {
-    return matchesAddressTokens(suggestion, fallback.addressTokens)
+    return (
+      matchesAddressTokens(suggestion, fallback.addressTokens)
+      && matchesPromotionTokens(suggestion, fallback.promotionTokens)
+    )
   })
 
   return combineSuggestions(
