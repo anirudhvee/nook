@@ -101,15 +101,9 @@ export function NookDetailPanel({ nook, onClose }: Props) {
       }
 
       try {
-        const detailQs = new URLSearchParams()
-        if (!nook.photo) detailQs.set('includePhoto', '1')
-
-        const detailResponse = await fetch(
-          `/api/places/${encodeURIComponent(nook.id)}${detailQs.size > 0 ? `?${detailQs}` : ''}`,
-          {
-            signal: controller.signal,
-          }
-        )
+        const detailResponse = await fetch(`/api/places/${encodeURIComponent(nook.id)}`, {
+          signal: controller.signal,
+        })
 
         if (!detailResponse.ok) return
 

@@ -591,8 +591,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
 
   const fetchAndOpenNook = useCallback(async (id: string) => {
     try {
-      const qs = new URLSearchParams({ includePhoto: '1' })
-      const res = await fetch(`/api/places/${encodeURIComponent(id)}?${qs}`)
+      const res = await fetch(`/api/places/${encodeURIComponent(id)}`)
       if (!res.ok) return
       const raw = await res.json() as {
         displayName?: { text?: string }

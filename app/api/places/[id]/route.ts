@@ -57,10 +57,9 @@ interface PlaceDetailResponse extends Omit<PlaceDetailApiResponse, 'photos'> {
 }
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const includePhoto = request.nextUrl.searchParams.get('includePhoto') === '1'
   const { id } = await params
   const apiKey = process.env.GOOGLE_PLACES_API_KEY
 
@@ -69,7 +68,6 @@ export async function GET(
   }
 
   const res = await fetch(`${PLACES_DETAIL_URL}/${encodeURIComponent(id)}`, {
-    cache: 'no-store',
     headers: {
       'X-Goog-Api-Key': apiKey,
       'X-Goog-FieldMask':
@@ -84,9 +82,10 @@ export async function GET(
           'reviewSummary',
           'generativeSummary',
           'reviews',
-          ...(includePhoto ? ['photos'] : []),
+          'photos',
         ].join(','),
     },
+    next: { revalidate: 3600 },
   })
 
   if (!res.ok) {
@@ -99,7 +98,7 @@ export async function GET(
 
   const response: PlaceDetailResponse = {
     ...rest,
-    ...(includePhoto ? { photo: pickPrimaryPhoto(photos) } : {}),
+    photo: pickPrimaryPhoto(photos),
   }
 
   return NextResponse.json(response)
