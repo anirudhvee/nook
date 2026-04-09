@@ -7,8 +7,11 @@ import type { SearchBoxSuggestion } from '@mapbox/search-js-core'
 import { LogoWordmark } from '@/components/LogoWordmark'
 import { cn } from '@/lib/utils'
 import { findDirectMatchSuggestion } from './searchPillMatch'
+import { buildAddressFallbackQuery, mergeSuggestions } from './searchPillQuery'
+import { getSuggestionSubtitle } from './searchPillSuggestionText'
 
 const SEARCH_TYPES = 'place,poi,neighborhood,address,locality,district,region'
+const SUGGESTION_LIMIT = 5
 
 type SelectedLocation = {
   lng: number
@@ -103,17 +106,28 @@ export function SearchPill({
     }
 
     const requestId = ++suggestionRequestIdRef.current
+    const fallbackQuery = buildAddressFallbackQuery(q)
 
     try {
-      const response = await searchCoreRef.current.suggest(q, {
+      const requestOptions = {
         sessionToken: sessionTokenRef.current,
         proximity: loc ? { lng: loc[0], lat: loc[1] } : 'ip',
-        language: 'en',
-        limit: 5,
+        language: 'en' as const,
+        limit: SUGGESTION_LIMIT,
         types: SEARCH_TYPES,
-      })
+      }
+      const [primaryResponse, fallbackResponse] = await Promise.all([
+        searchCoreRef.current.suggest(q, requestOptions),
+        fallbackQuery
+          ? searchCoreRef.current.suggest(fallbackQuery, requestOptions)
+          : Promise.resolve(null),
+      ])
       if (requestId !== suggestionRequestIdRef.current) return
-      setSuggestions(response.suggestions)
+      setSuggestions(
+        fallbackResponse
+          ? mergeSuggestions(fallbackResponse.suggestions, primaryResponse.suggestions, SUGGESTION_LIMIT)
+          : primaryResponse.suggestions
+      )
     } catch {
       if (requestId !== suggestionRequestIdRef.current) return
       setSuggestions([])
@@ -291,26 +305,30 @@ export function SearchPill({
           role="listbox"
           className="absolute top-[calc(100%+8px)] left-0 right-0 bg-background/95 backdrop-blur-sm rounded-xl shadow-xl border border-border overflow-hidden z-50"
         >
-          {visibleSuggestions.map((s, i) => (
-            <button
-              id={`${listboxId}-option-${i}`}
-              key={s.mapbox_id}
-              role="option"
-              aria-selected={activeSuggestionIndex === i}
-              onClick={() => handleSelect(s)}
-              onMouseEnter={() => setHighlightedSuggestionId(s.mapbox_id)}
-              className={cn(
-                'w-full text-left px-4 py-2.5 transition-colors',
-                activeSuggestionIndex === i ? 'bg-muted' : 'hover:bg-muted',
-                i < visibleSuggestions.length - 1 && 'border-b border-border/40'
-              )}
-            >
-              <p className="text-sm font-semibold leading-snug">{s.name}</p>
-              {s.place_formatted && (
-                <p className="text-xs text-muted-foreground mt-0.5 truncate">{s.place_formatted}</p>
-              )}
-            </button>
-          ))}
+          {visibleSuggestions.map((s, i) => {
+            const subtitle = getSuggestionSubtitle(s)
+
+            return (
+              <button
+                id={`${listboxId}-option-${i}`}
+                key={s.mapbox_id}
+                role="option"
+                aria-selected={activeSuggestionIndex === i}
+                onClick={() => handleSelect(s)}
+                onMouseEnter={() => setHighlightedSuggestionId(s.mapbox_id)}
+                className={cn(
+                  'w-full text-left px-4 py-2.5 transition-colors',
+                  activeSuggestionIndex === i ? 'bg-muted' : 'hover:bg-muted',
+                  i < visibleSuggestions.length - 1 && 'border-b border-border/40'
+                )}
+              >
+                <p className="text-sm font-semibold leading-snug">{s.name}</p>
+                {subtitle && (
+                  <p className="text-xs text-muted-foreground mt-0.5 truncate">{subtitle}</p>
+                )}
+              </button>
+            )
+          })}
         </div>
       )}
     </div>
