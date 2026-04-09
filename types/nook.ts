@@ -1,6 +1,12 @@
 export type NookType = 'cafe' | 'library' | 'coworking' | 'other'
 export type FilterType = 'all' | NookType
 
+export interface NookPhoto {
+  ref: string
+  width: number
+  height: number
+}
+
 export interface NookPlace {
   id: string
   name: string
@@ -11,5 +17,5 @@ export interface NookPlace {
   type: NookType
   rating?: number
   workSignals: string[]
-  photoName?: string
+  photo?: NookPhoto
 }

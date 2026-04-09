@@ -2,6 +2,7 @@
 
 import type { CSSProperties } from 'react'
 import { useRef, useEffect, useState, useCallback } from 'react'
+import Image from 'next/image'
 import { useSearchParams } from 'next/navigation'
 import mapboxgl from 'mapbox-gl'
 import {
@@ -30,6 +31,7 @@ import {
   createCirclePolygon,
   getCircleBounds,
 } from '@/components/map/radiusUtils'
+import { buildPlacePhotoUrl } from '@/lib/place-photo'
 
 const SRC = 'nooks'
 const L_CLUSTERS = 'clusters'
@@ -167,6 +169,7 @@ function PlacesPanel({
     ...nook,
     dist: distanceOrigin ? distanceM([distanceOrigin[1], distanceOrigin[0]], [nook.lat, nook.lng]) : undefined,
   }))
+  const firstPhotoIndex = placesWithDist.findIndex(nook => Boolean(nook.photo))
 
   const sliderPct = ((radiusM - MIN_RADIUS_M) / (MAX_RADIUS_M - MIN_RADIUS_M)) * 100
 
@@ -242,8 +245,9 @@ function PlacesPanel({
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-2.5">
-        {placesWithDist.map(nook => {
+        {placesWithDist.map((nook, index) => {
           const isSelected = nook.id === selectedId
+          const shouldEagerLoadPhoto = nook.photo != null && index === firstPhotoIndex
           return (
             <button
               key={nook.id}
@@ -259,12 +263,16 @@ function PlacesPanel({
                 <div className="absolute inset-0 flex items-center justify-center">
                   <NookTypeIcon type={nook.type} className="w-8 h-8 text-muted-foreground/25" />
                 </div>
-                {nook.photoName && (
-                  <img
-                    src={`/api/places/photo?ref=${encodeURIComponent(nook.photoName)}`}
+                {nook.photo && (
+                  <Image
+                    src={buildPlacePhotoUrl(nook.photo.ref, 640)}
                     alt={nook.name}
-                    className="absolute inset-0 w-full h-full object-cover"
-                    loading="lazy"
+                    fill
+                    sizes="300px"
+                    unoptimized
+                    loading={shouldEagerLoadPhoto ? 'eager' : 'lazy'}
+                    fetchPriority={shouldEagerLoadPhoto ? 'high' : 'auto'}
+                    className="object-cover"
                   />
                 )}
                 <span className="absolute top-2 right-2 p-1.5 rounded-full bg-white/80 backdrop-blur-sm text-muted-foreground">
@@ -589,7 +597,8 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
 
   const fetchAndOpenNook = useCallback(async (id: string) => {
     try {
-      const res = await fetch(`/api/places/${encodeURIComponent(id)}`)
+      const qs = new URLSearchParams({ includePhoto: '1' })
+      const res = await fetch(`/api/places/${encodeURIComponent(id)}?${qs}`)
       if (!res.ok) return
       const raw = await res.json() as {
         displayName?: { text?: string }
@@ -598,6 +607,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
         location?: { latitude: number; longitude: number }
         rating?: number
         types?: string[]
+        photo?: NookPlace['photo']
       }
 
       const types = raw.types ?? []
@@ -623,6 +633,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
         type: nookType,
         rating: raw.rating,
         workSignals: [],
+        photo: raw.photo,
       }
 
       handleSelectNook(nook)

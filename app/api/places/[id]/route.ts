@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { pickPrimaryPhoto } from '@/lib/place-photo'
+import type { NookPhoto } from '@/types/nook'
 
 const PLACES_DETAIL_URL = 'https://places.googleapis.com/v1/places'
 
@@ -43,12 +45,22 @@ interface PlaceDetailApiResponse {
     openNow?: boolean
     weekdayDescriptions?: string[]
   }
+  photos?: Array<{
+    name: string
+    widthPx: number
+    heightPx: number
+  }>
+}
+
+interface PlaceDetailResponse extends Omit<PlaceDetailApiResponse, 'photos'> {
+  photo?: NookPhoto
 }
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const includePhoto = _req.nextUrl.searchParams.get('includePhoto') === '1'
   const { id } = await params
   const apiKey = process.env.GOOGLE_PLACES_API_KEY
 
@@ -60,7 +72,19 @@ export async function GET(
     headers: {
       'X-Goog-Api-Key': apiKey,
       'X-Goog-FieldMask':
-        'displayName,formattedAddress,addressComponents,location,rating,types,regularOpeningHours,reviewSummary,generativeSummary,reviews',
+        [
+          'displayName',
+          'formattedAddress',
+          'addressComponents',
+          'location',
+          'rating',
+          'types',
+          'regularOpeningHours',
+          'reviewSummary',
+          'generativeSummary',
+          'reviews',
+          ...(includePhoto ? ['photos'] : []),
+        ].join(','),
     },
     next: { revalidate: 3600 },
   })
@@ -71,5 +95,12 @@ export async function GET(
   }
 
   const data = (await res.json()) as PlaceDetailApiResponse
-  return NextResponse.json(data)
+  const { photos, ...rest } = data
+
+  const response: PlaceDetailResponse = {
+    ...rest,
+    ...(includePhoto ? { photo: pickPrimaryPhoto(photos) } : {}),
+  }
+
+  return NextResponse.json(response)
 }

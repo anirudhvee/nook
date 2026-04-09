@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import type { NookPlace, NookType, FilterType } from '@/types/nook'
+import { pickPrimaryPhoto } from '@/lib/place-photo'
 
 const PLACES_API_URL = 'https://places.googleapis.com/v1/places:searchNearby'
 
@@ -110,7 +111,7 @@ export async function GET(request: NextRequest) {
       type: inferNookType(p.types ?? []),
       rating: p.rating,
       workSignals: [],
-      photoName: p.photos?.[0]?.name,
+      photo: pickPrimaryPhoto(p.photos),
     }))
 
   return NextResponse.json({ places })

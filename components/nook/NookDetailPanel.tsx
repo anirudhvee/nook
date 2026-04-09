@@ -1,9 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Image from 'next/image'
 import { ArrowLeft, Star, MapPin, Clock, BookmarkPlus, Wifi, Plug, Volume2, Laptop } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { NookPlace, NookType } from '@/types/nook'
+import { buildPlacePhotoUrl } from '@/lib/place-photo'
+import type { NookPlace, NookType, NookPhoto } from '@/types/nook'
 
 interface PlaceReview {
   rating?: number
@@ -17,6 +19,7 @@ interface PlaceReview {
 
 interface PlaceDetail {
   rating?: number
+  photo?: NookPhoto
   reviewSummary?: {
     text?: {
       text?: string
@@ -104,9 +107,15 @@ export function NookDetailPanel({ nook, onClose }: Props) {
       }
 
       try {
-        const detailResponse = await fetch(`/api/places/${encodeURIComponent(nook.id)}`, {
-          signal: controller.signal,
-        })
+        const detailQs = new URLSearchParams()
+        if (!nook.photo) detailQs.set('includePhoto', '1')
+
+        const detailResponse = await fetch(
+          `/api/places/${encodeURIComponent(nook.id)}${detailQs.size > 0 ? `?${detailQs}` : ''}`,
+          {
+            signal: controller.signal,
+          }
+        )
 
         if (!detailResponse.ok) return
 
@@ -158,7 +167,7 @@ export function NookDetailPanel({ nook, onClose }: Props) {
       setAiSummary(null)
       controller.abort()
     }
-  }, [nook.id])
+  }, [nook.id, nook.photo])
 
   const rating = detail?.rating ?? nook.rating
   const openNow = detail?.regularOpeningHours?.openNow
@@ -170,6 +179,7 @@ export function NookDetailPanel({ nook, onClose }: Props) {
     detail?.generativeSummary?.overview?.text ??
     aiSummary ??
     null
+  const photo = detail?.photo ?? nook.photo
   const summaryAttribution =
     reviewSummary === aiSummary && aiSummary != null
       ? 'Summarized with AI'
@@ -213,6 +223,21 @@ export function NookDetailPanel({ nook, onClose }: Props) {
       </div>
 
       <div className="flex-1 space-y-4 overflow-y-auto px-4 pt-3 pb-4">
+        {photo && (
+          <div className="relative h-48 overflow-hidden rounded-2xl border border-border bg-muted">
+            <Image
+              src={buildPlacePhotoUrl(photo.ref, 900)}
+              alt={nook.name}
+              fill
+              sizes="300px"
+              unoptimized
+              loading="eager"
+              fetchPriority="high"
+              className="object-cover"
+            />
+          </div>
+        )}
+
         <div className="flex items-start gap-2.5">
           <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
           <span className="text-sm leading-snug">{nook.address}</span>
