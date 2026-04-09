@@ -7,7 +7,7 @@ import {
   buildSuggestionFallback,
   mergeSuggestionResults,
   mergeSuggestions,
-  resolvePrimaryWithOptionalFallback,
+  resolvePrimaryThenOptionalFallback,
 } from '../../../../components/map/searchPillQuery'
 
 function makeSuggestion(mapboxId: string): SearchBoxSuggestion {
@@ -138,31 +138,73 @@ test('mergeSuggestions respects the result limit', () => {
   assert.deepEqual(merged.map(suggestion => suggestion.mapbox_id), ['a', 'b'])
 })
 
-test('resolvePrimaryWithOptionalFallback returns both results when both succeed', async () => {
-  const result = await resolvePrimaryWithOptionalFallback(
+test('resolvePrimaryThenOptionalFallback returns both results when both succeed', async () => {
+  let seenPrimary: string | null = null
+
+  const result = await resolvePrimaryThenOptionalFallback(
     Promise.resolve('primary'),
-    Promise.resolve('fallback')
+    Promise.resolve('fallback'),
+    primary => {
+      seenPrimary = primary
+    }
   )
 
+  assert.equal(seenPrimary, 'primary')
   assert.deepEqual(result, ['primary', 'fallback'])
 })
 
-test('resolvePrimaryWithOptionalFallback ignores fallback failures', async () => {
-  const result = await resolvePrimaryWithOptionalFallback(
+test('resolvePrimaryThenOptionalFallback ignores fallback failures', async () => {
+  let seenPrimary: string | null = null
+
+  const result = await resolvePrimaryThenOptionalFallback(
     Promise.resolve('primary'),
-    Promise.reject(new Error('fallback failed'))
+    Promise.reject(new Error('fallback failed')),
+    primary => {
+      seenPrimary = primary
+    }
   )
 
+  assert.equal(seenPrimary, 'primary')
   assert.deepEqual(result, ['primary', null])
 })
 
-test('resolvePrimaryWithOptionalFallback still rejects primary failures', async () => {
+test('resolvePrimaryThenOptionalFallback still rejects primary failures', async () => {
   await assert.rejects(() => {
-    return resolvePrimaryWithOptionalFallback(
+    return resolvePrimaryThenOptionalFallback(
       Promise.reject(new Error('primary failed')),
-      Promise.resolve('fallback')
+      Promise.resolve('fallback'),
+      () => undefined
     )
   })
+})
+
+test('resolvePrimaryThenOptionalFallback exposes primary results before fallback resolves', async () => {
+  let resolvePrimary!: (value: string) => void
+  let resolveFallback!: (value: string) => void
+  let seenPrimary: string | null = null
+
+  const primaryPromise = new Promise<string>(resolve => {
+    resolvePrimary = resolve
+  })
+  const fallbackPromise = new Promise<string>(resolve => {
+    resolveFallback = resolve
+  })
+
+  const resultPromise = resolvePrimaryThenOptionalFallback(
+    primaryPromise,
+    fallbackPromise,
+    primary => {
+      seenPrimary = primary
+    }
+  )
+
+  resolvePrimary('primary')
+  await Promise.resolve()
+
+  assert.equal(seenPrimary, 'primary')
+
+  resolveFallback('fallback')
+  assert.deepEqual(await resultPromise, ['primary', 'fallback'])
 })
 
 test('mergeSuggestionResults promotes fallback POIs that match the typed address prefix', () => {

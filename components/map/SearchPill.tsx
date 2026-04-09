@@ -11,7 +11,7 @@ import {
   buildSuggestionFallback,
   mergeSuggestionResults,
   mergeSuggestions,
-  resolvePrimaryWithOptionalFallback,
+  resolvePrimaryThenOptionalFallback,
 } from './searchPillQuery'
 import { getSuggestionSubtitle } from './searchPillSuggestionText'
 
@@ -125,22 +125,25 @@ export function SearchPill({
       const fallbackPromise = fallback
         ? searchCoreRef.current.suggest(fallback.query, requestOptions)
         : null
-      const [primaryResponse, fallbackResponse] = await resolvePrimaryWithOptionalFallback(
+      const [primaryResponse, fallbackResponse] = await resolvePrimaryThenOptionalFallback(
         primaryPromise,
-        fallbackPromise
+        fallbackPromise,
+        primaryResult => {
+          if (requestId !== suggestionRequestIdRef.current) return
+          setSuggestions(primaryResult.suggestions)
+        }
       )
       if (requestId !== suggestionRequestIdRef.current) return
+      if (!fallbackResponse) return
       setSuggestions(
-        fallbackResponse && fallback
+        fallback
           ? mergeSuggestionResults(
               primaryResponse.suggestions,
               fallbackResponse.suggestions,
               fallback,
               SUGGESTION_LIMIT
             )
-          : fallbackResponse
-            ? mergeSuggestions(primaryResponse.suggestions, fallbackResponse.suggestions, SUGGESTION_LIMIT)
-          : primaryResponse.suggestions
+          : mergeSuggestions(primaryResponse.suggestions, fallbackResponse.suggestions, SUGGESTION_LIMIT)
       )
     } catch {
       if (requestId !== suggestionRequestIdRef.current) return

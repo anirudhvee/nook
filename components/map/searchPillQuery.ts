@@ -171,15 +171,14 @@ export function buildSuggestionFallback(query: string): SuggestionFallback | nul
   return buildAddressFallback(query) ?? buildPartialAddressFallback(query)
 }
 
-export async function resolvePrimaryWithOptionalFallback<T>(
+export async function resolvePrimaryThenOptionalFallback<T>(
   primaryPromise: Promise<T>,
-  fallbackPromise?: Promise<T> | null
+  fallbackPromise: Promise<T> | null | undefined,
+  onPrimary: (primary: T) => void
 ): Promise<[T, T | null]> {
-  const handledFallbackPromise = fallbackPromise
-    ? fallbackPromise.catch(() => null)
-    : Promise.resolve(null)
-
-  const [primary, fallback] = await Promise.all([primaryPromise, handledFallbackPromise])
+  const primary = await primaryPromise
+  onPrimary(primary)
+  const fallback = fallbackPromise ? await fallbackPromise.catch(() => null) : null
 
   return [primary, fallback]
 }
