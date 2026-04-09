@@ -7,7 +7,7 @@ import type { SearchBoxSuggestion } from '@mapbox/search-js-core'
 import { LogoWordmark } from '@/components/LogoWordmark'
 import { cn } from '@/lib/utils'
 import { findDirectMatchSuggestion } from './searchPillMatch'
-import { buildAddressFallbackQuery, mergeSuggestions } from './searchPillQuery'
+import { buildAddressFallbackQuery, mergeSuggestions, resolvePrimaryWithOptionalFallback } from './searchPillQuery'
 import { getSuggestionSubtitle } from './searchPillSuggestionText'
 
 const SEARCH_TYPES = 'place,poi,neighborhood,address,locality,district,region'
@@ -116,12 +116,14 @@ export function SearchPill({
         limit: SUGGESTION_LIMIT,
         types: SEARCH_TYPES,
       }
-      const [primaryResponse, fallbackResponse] = await Promise.all([
-        searchCoreRef.current.suggest(q, requestOptions),
-        fallbackQuery
-          ? searchCoreRef.current.suggest(fallbackQuery, requestOptions)
-          : Promise.resolve(null),
-      ])
+      const primaryPromise = searchCoreRef.current.suggest(q, requestOptions)
+      const fallbackPromise = fallbackQuery
+        ? searchCoreRef.current.suggest(fallbackQuery, requestOptions)
+        : null
+      const [primaryResponse, fallbackResponse] = await resolvePrimaryWithOptionalFallback(
+        primaryPromise,
+        fallbackPromise
+      )
       if (requestId !== suggestionRequestIdRef.current) return
       setSuggestions(
         fallbackResponse

@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { SearchBoxSuggestion } from '@mapbox/search-js-core'
-import { buildAddressFallbackQuery, mergeSuggestions } from '../../../../components/map/searchPillQuery'
+import {
+  buildAddressFallbackQuery,
+  mergeSuggestions,
+  resolvePrimaryWithOptionalFallback,
+} from '../../../../components/map/searchPillQuery'
 
 function makeSuggestion(mapboxId: string): SearchBoxSuggestion {
   return {
@@ -54,6 +58,13 @@ test('buildAddressFallbackQuery skips venue names that only contain a number', (
   assert.equal(buildAddressFallbackQuery('studio 54 coffee'), null)
 })
 
+test('buildAddressFallbackQuery removes the address number instead of a numeric brand token', () => {
+  assert.equal(
+    buildAddressFallbackQuery('7 eleven 150 market street'),
+    '7 eleven market street'
+  )
+})
+
 test('mergeSuggestions de-duplicates while preserving order', () => {
   const merged = mergeSuggestions(
     [makeSuggestion('a'), makeSuggestion('b')],
@@ -72,4 +83,31 @@ test('mergeSuggestions respects the result limit', () => {
   )
 
   assert.deepEqual(merged.map(suggestion => suggestion.mapbox_id), ['a', 'b'])
+})
+
+test('resolvePrimaryWithOptionalFallback returns both results when both succeed', async () => {
+  const result = await resolvePrimaryWithOptionalFallback(
+    Promise.resolve('primary'),
+    Promise.resolve('fallback')
+  )
+
+  assert.deepEqual(result, ['primary', 'fallback'])
+})
+
+test('resolvePrimaryWithOptionalFallback ignores fallback failures', async () => {
+  const result = await resolvePrimaryWithOptionalFallback(
+    Promise.resolve('primary'),
+    Promise.reject(new Error('fallback failed'))
+  )
+
+  assert.deepEqual(result, ['primary', null])
+})
+
+test('resolvePrimaryWithOptionalFallback still rejects primary failures', async () => {
+  await assert.rejects(() => {
+    return resolvePrimaryWithOptionalFallback(
+      Promise.reject(new Error('primary failed')),
+      Promise.resolve('fallback')
+    )
+  })
 })
