@@ -5,7 +5,8 @@ import Image from 'next/image'
 import { ArrowLeft, Star, MapPin, Clock, BookmarkPlus, Wifi, Plug, Volume2, Laptop } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { buildPlacePhotoUrl } from '@/lib/place-photo'
-import type { NookPlace, NookType, NookPhoto } from '@/types/nook'
+import { NOOK_TYPE_LABELS } from '@/types/nook'
+import type { NookPlace, NookPhoto } from '@/types/nook'
 
 interface PlaceReview {
   rating?: number
@@ -38,13 +39,6 @@ interface PlaceDetail {
     openNow?: boolean
     weekdayDescriptions?: string[]
   }
-}
-
-const TYPE_LABELS: Record<NookType, string> = {
-  cafe: 'café',
-  library: 'library',
-  coworking: 'coworking',
-  other: 'other',
 }
 
 function signalIcon(signal: string) {
@@ -206,7 +200,7 @@ export function NookDetailPanel({ nook, onClose }: Props) {
             <h2 className="text-base font-semibold leading-snug">{nook.name}</h2>
             <div className="mt-1.5 flex flex-wrap items-center gap-2">
               <span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                {TYPE_LABELS[nook.type]}
+                {NOOK_TYPE_LABELS[nook.type]}
               </span>
               {nook.neighborhood && (
                 <span className="text-xs text-muted-foreground">{nook.neighborhood}</span>

@@ -1,6 +1,13 @@
 export type NookType = 'cafe' | 'library' | 'coworking' | 'other'
 export type FilterType = 'all' | NookType
 
+export const NOOK_TYPE_LABELS: Record<NookType, string> = {
+  cafe: 'café',
+  library: 'library',
+  coworking: 'coworking',
+  other: 'other',
+}
+
 export interface NookPhoto {
   ref: string
   width: number

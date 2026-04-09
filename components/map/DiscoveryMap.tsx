@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AuthControls } from '@/components/auth/AuthControls'
+import { NOOK_TYPE_LABELS } from '@/types/nook'
 import type { NookPlace, NookType, FilterType } from '@/types/nook'
 import { NookDetailPanel } from '@/components/nook/NookDetailPanel'
 import { SearchPill } from '@/components/map/SearchPill'
@@ -128,13 +129,6 @@ function toGeoJSON(nooks: NookPlace[]) {
       },
     })),
   }
-}
-
-const TYPE_LABELS: Record<NookType, string> = {
-  cafe: 'café',
-  library: 'library',
-  coworking: 'coworking',
-  other: 'other',
 }
 
 function NookTypeIcon({ type, className }: { type: NookType; className?: string }) {
@@ -293,7 +287,7 @@ function PlacesPanel({
                   )}
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-muted text-muted-foreground">
                     <NookTypeIcon type={nook.type} className="w-3 h-3" />
-                    {TYPE_LABELS[nook.type]}
+                    {NOOK_TYPE_LABELS[nook.type]}
                   </span>
                   {nook.rating != null && (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-muted text-muted-foreground">

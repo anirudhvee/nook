@@ -1,11 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 const MEDIA_BASE = 'https://places.googleapis.com/v1'
+const DEFAULT_MAX_WIDTH = 400
+const MAX_ALLOWED_WIDTH = 1600
+
+function isValidPhotoRef(ref: string): boolean {
+  if (ref.includes('?') || ref.includes('#') || ref.includes('\\')) {
+    return false
+  }
+
+  const segments = ref.split('/')
+  return (
+    segments.length === 4 &&
+    segments[0] === 'places' &&
+    segments[2] === 'photos' &&
+    segments[1].length > 0 &&
+    segments[3].length > 0 &&
+    !segments.some(segment => segment === '.' || segment === '..')
+  )
+}
+
+function parseMaxWidth(rawWidth: string | null): number {
+  if (!rawWidth) return DEFAULT_MAX_WIDTH
+  if (!/^\d+$/.test(rawWidth)) return DEFAULT_MAX_WIDTH
+
+  const width = Number.parseInt(rawWidth, 10)
+  return Math.min(Math.max(width, 1), MAX_ALLOWED_WIDTH)
+}
 
 export async function GET(request: NextRequest) {
   const ref = request.nextUrl.searchParams.get('ref')
 
-  if (!ref || !ref.startsWith('places/') || !ref.includes('/photos/')) {
+  if (!ref || !isValidPhotoRef(ref)) {
     return NextResponse.json({ error: 'Invalid photo reference' }, { status: 400 })
   }
 
@@ -14,28 +40,37 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'API key not configured' }, { status: 500 })
   }
 
-  const maxWidth = request.nextUrl.searchParams.get('maxWidth') ?? '400'
+  const maxWidth = parseMaxWidth(request.nextUrl.searchParams.get('maxWidth'))
 
   try {
-    const res = await fetch(
-      `${MEDIA_BASE}/${ref}/media?maxWidthPx=${maxWidth}&maxHeightPx=${maxWidth}&skipHttpRedirect=true&key=${apiKey}`,
-    )
+    const upstreamUrl = new URL(`${MEDIA_BASE}/${ref}/media`)
+    upstreamUrl.searchParams.set('maxWidthPx', String(maxWidth))
+    upstreamUrl.searchParams.set('maxHeightPx', String(maxWidth))
+    upstreamUrl.searchParams.set('skipHttpRedirect', 'true')
+    upstreamUrl.searchParams.set('key', apiKey)
+
+    const res = await fetch(upstreamUrl)
 
     if (!res.ok) {
-      return new NextResponse(null, { status: 404 })
+      return new NextResponse(null, {
+        status: res.status,
+        headers: {
+          'Cache-Control': 'no-store',
+        },
+      })
     }
 
     const data = (await res.json()) as { photoUri?: string }
 
     if (!data.photoUri) {
-      return new NextResponse(null, { status: 404 })
+      return new NextResponse(null, { status: 502 })
     }
 
     return new NextResponse(null, {
       status: 302,
       headers: {
         Location: data.photoUri,
-        'Cache-Control': 'public, max-age=86400',
+        'Cache-Control': 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800',
       },
     })
   } catch {
