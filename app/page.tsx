@@ -2,7 +2,7 @@ import { headers } from 'next/headers'
 import { Suspense } from 'react'
 import { DiscoveryMapLoader } from '@/components/map/DiscoveryMapLoader'
 
-// San Francisco — used only when Vercel IP geo headers are absent (local dev, unknown IP)
+
 const SF_FALLBACK: [number, number] = [-122.4194, 37.7749]
 
 export default async function HomePage() {

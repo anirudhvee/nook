@@ -4,7 +4,7 @@ import type { CSSProperties } from 'react'
 import { useRef, useEffect, useState, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import mapboxgl from 'mapbox-gl'
-import { ChevronUp, ScanSearch } from 'lucide-react'
+import { ChevronUp, ScanSearch, MapPinOff, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AuthControls } from '@/components/auth/AuthControls'
 import type { NookPlace, NookType, FilterType } from '@/types/nook'
@@ -278,6 +278,9 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
   const nearbyRequestIdRef = useRef(0)
   const searchedRequestIdRef = useRef(0)
   const radiusMRef = useRef(DEFAULT_RADIUS_M)
+  // Distinguishes auto-trigger on map load from a manual geolocate button press
+  const geolocateIsAutoTriggerRef = useRef(false)
+  const geoBtnPatchedRef = useRef(false)
 
   const [nearbyNooks, setNearbyNooks] = useState<NookPlace[]>([])
   const [searchedNooks, setSearchedNooks] = useState<NookPlace[]>([])
@@ -298,6 +301,38 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
   })
   const [radiusM, setRadiusM] = useState(DEFAULT_RADIUS_M)
   const [isRadiusActive, setIsRadiusActive] = useState(false)
+  const [showLocDeniedBanner, setShowLocDeniedBanner] = useState(false)
+  const [locBannerExiting, setLocBannerExiting] = useState(false)
+  const [locBannerShaking, setLocBannerShaking] = useState(false)
+  const showLocDeniedBannerRef = useRef(false)
+  const triggerBannerAttentionRef = useRef<() => void>(() => {})
+
+  useEffect(() => { showLocDeniedBannerRef.current = showLocDeniedBanner }, [showLocDeniedBanner])
+
+  useEffect(() => {
+    triggerBannerAttentionRef.current = () => {
+      if (showLocDeniedBannerRef.current) {
+        // Banner already visible — shake it to draw attention
+        setLocBannerShaking(false)
+        requestAnimationFrame(() => setLocBannerShaking(true))
+      } else {
+        setLocBannerExiting(false)
+        setShowLocDeniedBanner(true)
+      }
+    }
+  })
+
+  // Show banner if permission is already denied when the page loads.
+  // In-session denials are caught by the geolocate error listener in the map useEffect.
+  useEffect(() => {
+    if (!navigator.permissions) return
+    const dismissed = localStorage.getItem('nook_loc_denied_dismissed') === '1'
+    if (dismissed) return
+    navigator.permissions
+      .query({ name: 'geolocation' })
+      .then(result => { if (result.state === 'denied') setShowLocDeniedBanner(true) })
+      .catch(() => {})
+  }, [])
 
   const fetchPlaces = useCallback(async (lat: number, lng: number, type: FilterType) => {
     const qs = new URLSearchParams({
@@ -549,8 +584,6 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return
 
-    // Priority 1: exact GPS from previous visit
-    // Priority 2: IP geo from server (initialCenterRef) at reduced zoom to reflect uncertainty
     let cachedCenter: [number, number] | null = null
     try {
       const stored = localStorage.getItem('nook_loc')
@@ -612,6 +645,41 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
         }
         void loadNearbyPlaces(coords, 'all', { mapTarget: 'nearby', updateMap: true })
       }
+    })
+
+    geolocate.on('error', (e: GeolocationPositionError) => {
+      // code 1 = PERMISSION_DENIED
+      if (e.code !== 1) return
+      const wasAuto = geolocateIsAutoTriggerRef.current
+      geolocateIsAutoTriggerRef.current = false
+
+      // Mapbox disables the geolocate button when permission is denied so clicks never fire.
+      // Patch it once: remove disabled and wire a click handler that re-shows the banner.
+      if (!geoBtnPatchedRef.current) {
+        const geoBtn = map
+          .getContainer()
+          .querySelector('.mapboxgl-ctrl-geolocate') as HTMLButtonElement | null
+        if (geoBtn) {
+          // Remove the HTML disabled attribute so clicks fire, but keep the
+          // visual disabled appearance so it's clear something is wrong
+          geoBtn.disabled = false
+          geoBtn.style.opacity = '0.5'
+          geoBtn.style.cursor = 'pointer'
+          geoBtn.addEventListener('click', () => {
+            triggerBannerAttentionRef.current()
+          })
+          geoBtnPatchedRef.current = true
+        }
+      }
+
+      // Auto-trigger on map load respects the dismissed preference —
+      // a manual button press always re-shows the banner so the user knows why it failed
+      if (wasAuto) {
+        const dismissed = localStorage.getItem('nook_loc_denied_dismissed') === '1'
+        if (dismissed) return
+      }
+      setLocBannerExiting(false)
+      setShowLocDeniedBanner(true)
     })
 
     map.on('load', () => {
@@ -752,12 +820,11 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
         map.getCanvas().style.cursor = ''
       })
 
-      // Stage 1: load places for best available center (localStorage GPS or IP geo)
       nearbyOriginRef.current = startCenter
       setNearbyOrigin(startCenter)
       void loadNearbyPlaces(startCenter, 'all', { mapTarget: 'nearby', updateMap: true })
 
-      // Stage 2: request precise GPS — if granted, map.flyTo() + places reload in geolocate handler
+      geolocateIsAutoTriggerRef.current = true
       geolocate.trigger()
     })
 
@@ -972,6 +1039,48 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
           />
         )}
       </div>
+
+      {showLocDeniedBanner && (
+        <div
+          className={cn(
+            'absolute top-[60px] left-1/2 -translate-x-1/2 z-30 px-4 w-full max-w-md pointer-events-none duration-300',
+            locBannerExiting
+              ? 'animate-out fade-out slide-out-to-top-2'
+              : 'animate-in fade-in slide-in-from-top-2',
+          )}
+        >
+          <div
+            className={cn(
+              'pointer-events-auto bg-card border border-border/70 rounded-2xl shadow-md px-4 py-3 flex items-center gap-3',
+              locBannerShaking && 'banner-shake',
+            )}
+            onAnimationEnd={() => setLocBannerShaking(false)}
+          >
+            <div className="shrink-0 rounded-full bg-muted p-1.5">
+              <MapPinOff className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-foreground leading-snug">
+                Location access is blocked
+              </p>
+              <p className="text-sm text-muted-foreground mt-0.5 leading-snug">
+                Enable it in your browser settings to find nooks near you. You can still search any location.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                setLocBannerExiting(true)
+                try { localStorage.setItem('nook_loc_denied_dismissed', '1') } catch {}
+                setTimeout(() => setShowLocDeniedBanner(false), 300)
+              }}
+              className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+              aria-label="Dismiss"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {(detailNook || showSearchResultsPanel) && (
         <div
