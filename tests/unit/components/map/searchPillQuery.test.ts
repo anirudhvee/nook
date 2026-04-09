@@ -49,6 +49,11 @@ test('buildAddressFallbackQuery skips queries without a plain house number', () 
   assert.equal(buildAddressFallbackQuery('starbucks 24th street'), null)
 })
 
+test('buildAddressFallbackQuery skips venue names that only contain a number', () => {
+  assert.equal(buildAddressFallbackQuery('cafe 86'), null)
+  assert.equal(buildAddressFallbackQuery('studio 54 coffee'), null)
+})
+
 test('mergeSuggestions de-duplicates while preserving order', () => {
   const merged = mergeSuggestions(
     [makeSuggestion('a'), makeSuggestion('b')],

@@ -125,7 +125,7 @@ export function SearchPill({
       if (requestId !== suggestionRequestIdRef.current) return
       setSuggestions(
         fallbackResponse
-          ? mergeSuggestions(fallbackResponse.suggestions, primaryResponse.suggestions, SUGGESTION_LIMIT)
+          ? mergeSuggestions(primaryResponse.suggestions, fallbackResponse.suggestions, SUGGESTION_LIMIT)
           : primaryResponse.suggestions
       )
     } catch {
