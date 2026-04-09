@@ -68,6 +68,11 @@ test('buildAddressFallbackQuery removes the address number instead of a numeric 
   )
 })
 
+test('buildAddressFallbackQuery skips ambiguous numeric-brand locality queries', () => {
+  assert.equal(buildAddressFallbackQuery('7 eleven market street san francisco'), null)
+  assert.equal(buildSuggestionFallback('7 eleven market street san francisco'), null)
+})
+
 test('buildPartialAddressFallbackQuery removes a house number for partial street queries', () => {
   assert.equal(buildPartialAddressFallbackQuery('starbucks 233 wi'), 'starbucks wi')
   assert.equal(buildPartialAddressFallbackQuery('starbucks 150 van'), 'starbucks van')
@@ -93,6 +98,11 @@ test('buildSuggestionFallback prefers full address fallback over partial street 
     addressTokens: ['150', 'market', 'street'],
     promotionTokens: ['san', 'francisco'],
     query: 'market street san francisco',
+  })
+  assert.deepEqual(buildSuggestionFallback('10 market street starbucks'), {
+    addressTokens: ['10', 'market', 'street'],
+    promotionTokens: ['starbucks'],
+    query: 'market street starbucks',
   })
 })
 

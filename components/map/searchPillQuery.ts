@@ -8,6 +8,11 @@ export type SuggestionFallback = {
   query: string
 }
 
+type AddressSegment = {
+  houseNumberIndex: number
+  streetTypeIndex: number
+}
+
 function tokenizeQuery(query: string): string[] {
   return query.trim().split(/\s+/).filter(Boolean)
 }
@@ -24,21 +29,42 @@ function normalizeTokens(tokens: string[]): string[] {
   return normalizeSearchText(tokens.join(' ')).split(' ').filter(Boolean)
 }
 
-function findAddressHouseNumberIndex(tokens: string[]): number {
+function findAddressSegment(tokens: string[]): AddressSegment | null {
   let searchStartIndex = 0
 
   while (searchStartIndex < tokens.length) {
     const streetTypeIndex = findStreetTypeIndex(tokens, searchStartIndex)
-    if (streetTypeIndex < 0) return -1
+    if (streetTypeIndex < 0) return null
 
-    for (let tokenIndex = streetTypeIndex - 1; tokenIndex >= 0; tokenIndex -= 1) {
-      if (isHouseNumberToken(tokens[tokenIndex] ?? '')) return tokenIndex
+    for (let tokenIndex = streetTypeIndex - 1; tokenIndex >= searchStartIndex; tokenIndex -= 1) {
+      if (isHouseNumberToken(tokens[tokenIndex] ?? '')) {
+        return {
+          houseNumberIndex: tokenIndex,
+          streetTypeIndex,
+        }
+      }
     }
 
     searchStartIndex = streetTypeIndex + 1
   }
 
-  return -1
+  return null
+}
+
+function isAmbiguousLeadingAddressSegment(
+  tokens: string[],
+  houseNumberIndex: number,
+  streetTypeIndex: number
+): boolean {
+  if (houseNumberIndex !== 0) return false
+
+  const houseNumber = tokens[houseNumberIndex] ?? ''
+  if (!/^\d{1,2}[a-zA-Z]?$/.test(houseNumber)) return false
+
+  const streetNameTokens = tokens.slice(houseNumberIndex + 1, streetTypeIndex)
+  const suffixTokens = tokens.slice(streetTypeIndex + 1)
+
+  return streetNameTokens.length >= 2 && suffixTokens.length >= 2
 }
 
 function buildSuggestionFallbackResult(
@@ -63,11 +89,11 @@ export function buildAddressFallbackQuery(query: string): string | null {
 
 function buildAddressFallback(query: string): SuggestionFallback | null {
   const tokens = tokenizeQuery(query)
-  const numberIndex = findAddressHouseNumberIndex(tokens)
+  const addressSegment = findAddressSegment(tokens)
+  if (!addressSegment) return null
 
-  if (numberIndex < 0) return null
-
-  const streetTypeIndex = findStreetTypeIndex(tokens, numberIndex + 1)
+  const { houseNumberIndex: numberIndex, streetTypeIndex } = addressSegment
+  if (isAmbiguousLeadingAddressSegment(tokens, numberIndex, streetTypeIndex)) return null
 
   if (numberIndex > 0) {
     if (streetTypeIndex < 0) return null
