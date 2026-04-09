@@ -592,13 +592,26 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
         localStorage.setItem('nook_loc', JSON.stringify({ lng: coords[0], lat: coords[1], ts: Date.now() }))
       } catch {}
 
+      // Always update location tracking — these drive distance display and restoreNearbyView
       realUserLocRef.current = coords
       nearbyOriginRef.current = coords
       setRealUserLoc(coords)
       setNearbyOrigin(coords)
-      // Explicitly fly to the GPS location — the GeolocateControl alone is not reliable enough
-      map.flyTo({ center: coords, zoom: 14, duration: 1500 })
-      void loadNearbyPlaces(coords, 'all', { mapTarget: 'nearby', updateMap: true })
+
+      // Only move the camera and reload places if GPS puts us somewhere meaningfully different
+      // from where we already opened (avoids no-op fly + redundant API call for returning users,
+      // and avoids hijacking the camera if the user is already browsing a searched location)
+      const movedSignificantly = distanceM(
+        [startCenter[1], startCenter[0]],
+        [coords[1], coords[0]]
+      ) > 200
+
+      if (movedSignificantly) {
+        if (mapSyncModeRef.current === 'nearby') {
+          map.flyTo({ center: coords, zoom: 14, duration: 1500 })
+        }
+        void loadNearbyPlaces(coords, 'all', { mapTarget: 'nearby', updateMap: true })
+      }
     })
 
     map.on('load', () => {
