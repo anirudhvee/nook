@@ -13,6 +13,8 @@ type AddressSegment = {
   streetTypeIndex: number
 }
 
+const AMBIGUOUS_STREET_NAME_TOKENS = new Set(['st', 'ave', 'av'])
+
 function tokenizeQuery(query: string): string[] {
   return query.trim().split(/\s+/).filter(Boolean)
 }
@@ -29,23 +31,46 @@ function normalizeTokens(tokens: string[]): string[] {
   return normalizeSearchText(tokens.join(' ')).split(' ').filter(Boolean)
 }
 
+function looksLikeStreetNameAbbreviation(tokens: string[], streetTypeIndex: number): boolean {
+  const token = (tokens[streetTypeIndex] ?? '').toLowerCase()
+  if (!AMBIGUOUS_STREET_NAME_TOKENS.has(token)) return false
+
+  return findStreetTypeIndex(tokens, streetTypeIndex + 1) >= 0
+}
+
 function findAddressSegment(tokens: string[]): AddressSegment | null {
-  let searchStartIndex = 0
+  const searchStartIndex = 0
 
   while (searchStartIndex < tokens.length) {
-    const streetTypeIndex = findStreetTypeIndex(tokens, searchStartIndex)
+    let streetTypeIndex = findStreetTypeIndex(tokens, searchStartIndex)
     if (streetTypeIndex < 0) return null
 
-    for (let tokenIndex = streetTypeIndex - 1; tokenIndex >= searchStartIndex; tokenIndex -= 1) {
-      if (isHouseNumberToken(tokens[tokenIndex] ?? '')) {
-        return {
-          houseNumberIndex: tokenIndex,
-          streetTypeIndex,
+    while (streetTypeIndex >= 0) {
+      let shouldContinue = false
+
+      for (let tokenIndex = streetTypeIndex - 1; tokenIndex >= searchStartIndex; tokenIndex -= 1) {
+        if (isHouseNumberToken(tokens[tokenIndex] ?? '')) {
+          if (looksLikeStreetNameAbbreviation(tokens, streetTypeIndex)) {
+            shouldContinue = true
+            break
+          }
+
+          return {
+            houseNumberIndex: tokenIndex,
+            streetTypeIndex,
+          }
         }
       }
+
+      if (shouldContinue) {
+        streetTypeIndex = findStreetTypeIndex(tokens, streetTypeIndex + 1)
+        continue
+      }
+
+      streetTypeIndex = findStreetTypeIndex(tokens, streetTypeIndex + 1)
     }
 
-    searchStartIndex = streetTypeIndex + 1
+    return null
   }
 
   return null

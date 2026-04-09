@@ -73,6 +73,18 @@ test('buildAddressFallbackQuery skips ambiguous numeric-brand locality queries',
   assert.equal(buildSuggestionFallback('7 eleven market street san francisco'), null)
 })
 
+test('buildAddressFallbackQuery skips street-type abbreviations inside street names', () => {
+  assert.equal(
+    buildAddressFallbackQuery('starbucks 150 st john street'),
+    'starbucks st john street'
+  )
+  assert.deepEqual(buildSuggestionFallback('starbucks 150 st john street'), {
+    addressTokens: ['150', 'street', 'john', 'street'],
+    promotionTokens: ['starbucks'],
+    query: 'starbucks st john street',
+  })
+})
+
 test('buildPartialAddressFallbackQuery removes a house number for partial street queries', () => {
   assert.equal(buildPartialAddressFallbackQuery('starbucks 233 wi'), 'starbucks wi')
   assert.equal(buildPartialAddressFallbackQuery('starbucks 150 van'), 'starbucks van')
@@ -269,4 +281,39 @@ test('mergeSuggestionResults skips promotion when fallback only matches locality
   )
 
   assert.deepEqual(merged.map(suggestion => suggestion.mapbox_id), ['address-1', 'poi-1'])
+})
+
+test('mergeSuggestionResults promotes POIs for street names that include street-type abbreviations', () => {
+  const primary = [
+    {
+      ...makeSuggestion('address-1'),
+      feature_type: 'address',
+      address: '150 St John Street',
+      full_address: '150 St John Street, San Jose, California 95113, United States',
+      name: '150 St John Street',
+    },
+  ] as SearchBoxSuggestion[]
+
+  const fallback = [
+    {
+      ...makeSuggestion('poi-1'),
+      feature_type: 'poi',
+      name: 'Starbucks',
+      address: '150 St John Street',
+      full_address: '150 St John Street, San Jose, California 95113, United States',
+    },
+  ] as SearchBoxSuggestion[]
+
+  const merged = mergeSuggestionResults(
+    primary,
+    fallback,
+    {
+      addressTokens: ['150', 'street', 'john', 'street'],
+      promotionTokens: ['starbucks'],
+      query: 'starbucks st john street',
+    },
+    5
+  )
+
+  assert.deepEqual(merged.map(suggestion => suggestion.mapbox_id), ['poi-1', 'address-1'])
 })
