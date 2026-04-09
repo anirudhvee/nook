@@ -1,37 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
+import {
+  isValidPlacePhotoRef,
+  parsePlacePhotoMaxWidth,
+} from '@/lib/place-photo'
 
 const MEDIA_BASE = 'https://places.googleapis.com/v1'
-const DEFAULT_MAX_WIDTH = 400
-const MAX_ALLOWED_WIDTH = 1600
-
-function isValidPhotoRef(ref: string): boolean {
-  if (ref.includes('?') || ref.includes('#') || ref.includes('\\')) {
-    return false
-  }
-
-  const segments = ref.split('/')
-  return (
-    segments.length === 4 &&
-    segments[0] === 'places' &&
-    segments[2] === 'photos' &&
-    segments[1].length > 0 &&
-    segments[3].length > 0 &&
-    !segments.some(segment => segment === '.' || segment === '..')
-  )
-}
-
-function parseMaxWidth(rawWidth: string | null): number {
-  if (!rawWidth) return DEFAULT_MAX_WIDTH
-  if (!/^\d+$/.test(rawWidth)) return DEFAULT_MAX_WIDTH
-
-  const width = Number.parseInt(rawWidth, 10)
-  return Math.min(Math.max(width, 1), MAX_ALLOWED_WIDTH)
-}
 
 export async function GET(request: NextRequest) {
   const ref = request.nextUrl.searchParams.get('ref')
 
-  if (!ref || !isValidPhotoRef(ref)) {
+  if (!ref || !isValidPlacePhotoRef(ref)) {
     return NextResponse.json({ error: 'Invalid photo reference' }, { status: 400 })
   }
 
@@ -40,7 +18,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'API key not configured' }, { status: 500 })
   }
 
-  const maxWidth = parseMaxWidth(request.nextUrl.searchParams.get('maxWidth'))
+  const maxWidth = parsePlacePhotoMaxWidth(request.nextUrl.searchParams.get('maxWidth'))
 
   try {
     const upstreamUrl = new URL(`${MEDIA_BASE}/${ref}/media`)
