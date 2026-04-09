@@ -19,9 +19,6 @@ import {
   getCircleBounds,
 } from '@/components/map/radiusUtils'
 
-const SF_CENTER: [number, number] = [-122.4194, 37.7749]
-const GEO_TIMEOUT_MS = 8000
-
 const SRC = 'nooks'
 const L_CLUSTERS = 'clusters'
 const L_CLUSTER_COUNT = 'cluster-count'
@@ -262,10 +259,11 @@ function PlacesPanel({
   )
 }
 
-export function DiscoveryMap() {
+export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number] }) {
   const searchParams = useSearchParams()
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<mapboxgl.Map | null>(null)
+  const initialCenterRef = useRef<[number, number]>(initialCenter)
   const mapLoadedRef = useRef(false)
   const realUserLocRef = useRef<[number, number] | null>(null)
   const nearbyOriginRef = useRef<[number, number] | null>(null)
@@ -453,7 +451,7 @@ export function DiscoveryMap() {
     mapSyncModeRef.current = 'nearby'
     setIsSearchOpen(false)
 
-    const target = realUserLocRef.current ?? nearbyOriginRef.current ?? SF_CENTER
+    const target = realUserLocRef.current ?? nearbyOriginRef.current ?? initialCenterRef.current
     if (isRadiusActive) {
       fitToCircle(target, radiusMRef.current)
     } else {
@@ -556,7 +554,7 @@ export function DiscoveryMap() {
     const map = new mapboxgl.Map({
       container: mapContainerRef.current,
       style: 'mapbox://styles/mapbox/outdoors-v12',
-      center: SF_CENTER,
+      center: initialCenterRef.current,
       zoom: 14,
       attributionControl: false,
     })
@@ -571,28 +569,15 @@ export function DiscoveryMap() {
     })
     map.addControl(geolocate, 'bottom-right')
 
-    let geoResolved = false
-    let fallbackTimer: ReturnType<typeof setTimeout>
-
     geolocate.on('geolocate', (e: GeolocationPosition) => {
-      geoResolved = true
-      clearTimeout(fallbackTimer)
-
       const coords: [number, number] = [e.coords.longitude, e.coords.latitude]
       realUserLocRef.current = coords
       nearbyOriginRef.current = coords
       setRealUserLoc(coords)
       setNearbyOrigin(coords)
+      // Explicitly fly to the GPS location — the GeolocateControl alone is not reliable enough
+      map.flyTo({ center: coords, zoom: 14, duration: 1500 })
       void loadNearbyPlaces(coords, 'all', { mapTarget: 'nearby', updateMap: true })
-    })
-
-    geolocate.on('error', () => {
-      if (geoResolved) return
-      geoResolved = true
-      clearTimeout(fallbackTimer)
-      nearbyOriginRef.current = SF_CENTER
-      setNearbyOrigin(SF_CENTER)
-      void loadNearbyPlaces(SF_CENTER, 'all', { mapTarget: 'nearby', updateMap: true })
     })
 
     map.on('load', () => {
@@ -733,21 +718,19 @@ export function DiscoveryMap() {
         map.getCanvas().style.cursor = ''
       })
 
+      // Stage 1: load places immediately from IP geo — no permission needed, instant result
+      nearbyOriginRef.current = initialCenterRef.current
+      setNearbyOrigin(initialCenterRef.current)
+      void loadNearbyPlaces(initialCenterRef.current, 'all', { mapTarget: 'nearby', updateMap: true })
+
+      // Stage 2: request precise GPS — if granted, map.flyTo() + places reload in geolocate handler
       geolocate.trigger()
-      fallbackTimer = setTimeout(() => {
-        if (geoResolved) return
-        geoResolved = true
-        nearbyOriginRef.current = SF_CENTER
-        setNearbyOrigin(SF_CENTER)
-        void loadNearbyPlaces(SF_CENTER, 'all', { mapTarget: 'nearby', updateMap: true })
-      }, GEO_TIMEOUT_MS)
     })
 
     mapRef.current = map
     const pointMarkers = pointMarkersRef.current
 
     return () => {
-      clearTimeout(fallbackTimer)
       pointMarkers.forEach(marker => marker.remove())
       pointMarkers.clear()
       map.remove()
@@ -795,7 +778,7 @@ export function DiscoveryMap() {
       return
     }
 
-    const currentNearbyOrigin = nearbyOriginRef.current ?? SF_CENTER
+    const currentNearbyOrigin = nearbyOriginRef.current ?? initialCenterRef.current
     const currentSelectedSearchLocation = selectedSearchLocationRef.current
 
     void loadNearbyPlaces(currentNearbyOrigin, filter, { mapTarget: 'nearby', updateMap: true })
@@ -826,7 +809,7 @@ export function DiscoveryMap() {
 
     const center: [number, number] = selectedSearchLocation
       ? [selectedSearchLocation.lng, selectedSearchLocation.lat]
-      : (nearbyOrigin ?? SF_CENTER)
+      : (nearbyOrigin ?? initialCenterRef.current)
 
     src.setData({ type: 'FeatureCollection', features: [createCirclePolygon(center, radiusM)] })
     fitToCircle(center, radiusM)
@@ -837,7 +820,7 @@ export function DiscoveryMap() {
     if (!isRadiusActive) return
 
     const timer = setTimeout(() => {
-      const origin = nearbyOriginRef.current ?? SF_CENTER
+      const origin = nearbyOriginRef.current ?? initialCenterRef.current
       void loadNearbyPlaces(origin, filter, {
         mapTarget: 'nearby',
         updateMap: mapSyncModeRef.current === 'nearby',
