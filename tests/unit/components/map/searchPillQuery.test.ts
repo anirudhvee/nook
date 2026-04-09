@@ -3,6 +3,9 @@ import test from 'node:test'
 import type { SearchBoxSuggestion } from '@mapbox/search-js-core'
 import {
   buildAddressFallbackQuery,
+  buildPartialAddressFallbackQuery,
+  buildSuggestionFallback,
+  mergeSuggestionResults,
   mergeSuggestions,
   resolvePrimaryWithOptionalFallback,
 } from '../../../../components/map/searchPillQuery'
@@ -65,6 +68,27 @@ test('buildAddressFallbackQuery removes the address number instead of a numeric 
   )
 })
 
+test('buildPartialAddressFallbackQuery removes a house number for partial street queries', () => {
+  assert.equal(buildPartialAddressFallbackQuery('starbucks 233 wi'), 'starbucks wi')
+  assert.equal(buildPartialAddressFallbackQuery('starbucks 150 van'), 'starbucks van')
+})
+
+test('buildPartialAddressFallbackQuery skips short numeric brand tokens', () => {
+  assert.equal(buildPartialAddressFallbackQuery('cafe 86 wi'), null)
+  assert.equal(buildPartialAddressFallbackQuery('studio 54 win'), null)
+})
+
+test('buildSuggestionFallback prefers full address fallback over partial street fallback', () => {
+  assert.deepEqual(buildSuggestionFallback('starbucks 150 van ness avenue'), {
+    addressTokens: ['150', 'van', 'ness', 'avenue'],
+    query: 'starbucks van ness avenue',
+  })
+  assert.deepEqual(buildSuggestionFallback('starbucks 233 wi'), {
+    addressTokens: ['233', 'wi'],
+    query: 'starbucks wi',
+  })
+})
+
 test('mergeSuggestions de-duplicates while preserving order', () => {
   const merged = mergeSuggestions(
     [makeSuggestion('a'), makeSuggestion('b')],
@@ -110,4 +134,49 @@ test('resolvePrimaryWithOptionalFallback still rejects primary failures', async 
       Promise.resolve('fallback')
     )
   })
+})
+
+test('mergeSuggestionResults promotes fallback POIs that match the typed address prefix', () => {
+  const primary = [
+    {
+      ...makeSuggestion('address-1'),
+      feature_type: 'address',
+      address: '233 Winston Drive',
+      full_address: '233 Winston Drive, San Francisco, California 94132, United States',
+      name: '233 Winston Drive',
+    },
+    {
+      ...makeSuggestion('address-2'),
+      feature_type: 'address',
+      address: '233 Willow Street',
+      full_address: '233 Willow Street, San Francisco, California 94109, United States',
+      name: '233 Willow Street',
+    },
+  ] as SearchBoxSuggestion[]
+
+  const fallback = [
+    {
+      ...makeSuggestion('poi-1'),
+      feature_type: 'poi',
+      name: 'Starbucks',
+      address: '233 Winston Drive',
+      full_address: '233 Winston Drive, San Francisco, California 94132, United States',
+    },
+    {
+      ...makeSuggestion('poi-2'),
+      feature_type: 'poi',
+      name: 'Starbucks',
+      address: '201 Mission Street',
+      full_address: '201 Mission Street, San Francisco, California 94105, United States',
+    },
+  ] as SearchBoxSuggestion[]
+
+  const merged = mergeSuggestionResults(
+    primary,
+    fallback,
+    { addressTokens: ['233', 'wi'], query: 'starbucks wi' },
+    5
+  )
+
+  assert.deepEqual(merged.map(suggestion => suggestion.mapbox_id), ['poi-1', 'address-1', 'address-2', 'poi-2'])
 })

@@ -7,7 +7,12 @@ import type { SearchBoxSuggestion } from '@mapbox/search-js-core'
 import { LogoWordmark } from '@/components/LogoWordmark'
 import { cn } from '@/lib/utils'
 import { findDirectMatchSuggestion } from './searchPillMatch'
-import { buildAddressFallbackQuery, mergeSuggestions, resolvePrimaryWithOptionalFallback } from './searchPillQuery'
+import {
+  buildSuggestionFallback,
+  mergeSuggestionResults,
+  mergeSuggestions,
+  resolvePrimaryWithOptionalFallback,
+} from './searchPillQuery'
 import { getSuggestionSubtitle } from './searchPillSuggestionText'
 
 const SEARCH_TYPES = 'place,poi,neighborhood,address,locality,district,region'
@@ -106,7 +111,7 @@ export function SearchPill({
     }
 
     const requestId = ++suggestionRequestIdRef.current
-    const fallbackQuery = buildAddressFallbackQuery(q)
+    const fallback = buildSuggestionFallback(q)
 
     try {
       const requestOptions = {
@@ -117,8 +122,8 @@ export function SearchPill({
         types: SEARCH_TYPES,
       }
       const primaryPromise = searchCoreRef.current.suggest(q, requestOptions)
-      const fallbackPromise = fallbackQuery
-        ? searchCoreRef.current.suggest(fallbackQuery, requestOptions)
+      const fallbackPromise = fallback
+        ? searchCoreRef.current.suggest(fallback.query, requestOptions)
         : null
       const [primaryResponse, fallbackResponse] = await resolvePrimaryWithOptionalFallback(
         primaryPromise,
@@ -126,8 +131,15 @@ export function SearchPill({
       )
       if (requestId !== suggestionRequestIdRef.current) return
       setSuggestions(
-        fallbackResponse
-          ? mergeSuggestions(primaryResponse.suggestions, fallbackResponse.suggestions, SUGGESTION_LIMIT)
+        fallbackResponse && fallback
+          ? mergeSuggestionResults(
+              primaryResponse.suggestions,
+              fallbackResponse.suggestions,
+              fallback,
+              SUGGESTION_LIMIT
+            )
+          : fallbackResponse
+            ? mergeSuggestions(primaryResponse.suggestions, fallbackResponse.suggestions, SUGGESTION_LIMIT)
           : primaryResponse.suggestions
       )
     } catch {
