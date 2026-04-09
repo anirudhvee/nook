@@ -549,13 +549,29 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return
 
+    // Priority 1: exact GPS from previous visit
+    // Priority 2: IP geo from server (initialCenterRef) at reduced zoom to reflect uncertainty
+    let cachedCenter: [number, number] | null = null
+    try {
+      const stored = localStorage.getItem('nook_loc')
+      if (stored) {
+        const { lng, lat, ts } = JSON.parse(stored) as { lng: number; lat: number; ts: number }
+        if (Date.now() - ts < 30 * 24 * 60 * 60 * 1000 && isFinite(lng) && isFinite(lat)) {
+          cachedCenter = [lng, lat]
+        }
+      }
+    } catch {}
+
+    const startCenter = cachedCenter ?? initialCenterRef.current
+    const startZoom = cachedCenter ? 14 : 11
+
     mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? ''
 
     const map = new mapboxgl.Map({
       container: mapContainerRef.current,
       style: 'mapbox://styles/mapbox/outdoors-v12',
-      center: initialCenterRef.current,
-      zoom: 14,
+      center: startCenter,
+      zoom: startZoom,
       attributionControl: false,
     })
 
@@ -571,6 +587,11 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
 
     geolocate.on('geolocate', (e: GeolocationPosition) => {
       const coords: [number, number] = [e.coords.longitude, e.coords.latitude]
+
+      try {
+        localStorage.setItem('nook_loc', JSON.stringify({ lng: coords[0], lat: coords[1], ts: Date.now() }))
+      } catch {}
+
       realUserLocRef.current = coords
       nearbyOriginRef.current = coords
       setRealUserLoc(coords)
@@ -718,10 +739,10 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
         map.getCanvas().style.cursor = ''
       })
 
-      // Stage 1: load places immediately from IP geo — no permission needed, instant result
-      nearbyOriginRef.current = initialCenterRef.current
-      setNearbyOrigin(initialCenterRef.current)
-      void loadNearbyPlaces(initialCenterRef.current, 'all', { mapTarget: 'nearby', updateMap: true })
+      // Stage 1: load places for best available center (localStorage GPS or IP geo)
+      nearbyOriginRef.current = startCenter
+      setNearbyOrigin(startCenter)
+      void loadNearbyPlaces(startCenter, 'all', { mapTarget: 'nearby', updateMap: true })
 
       // Stage 2: request precise GPS — if granted, map.flyTo() + places reload in geolocate handler
       geolocate.trigger()
