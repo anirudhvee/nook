@@ -176,9 +176,12 @@ export async function resolvePrimaryThenOptionalFallback<T>(
   fallbackPromise: Promise<T> | null | undefined,
   onPrimary: (primary: T) => void
 ): Promise<[T, T | null]> {
+  const handledFallbackPromise = fallbackPromise
+    ? fallbackPromise.catch(() => null)
+    : null
   const primary = await primaryPromise
   onPrimary(primary)
-  const fallback = fallbackPromise ? await fallbackPromise.catch(() => null) : null
+  const fallback = handledFallbackPromise ? await handledFallbackPromise : null
 
   return [primary, fallback]
 }

@@ -178,6 +178,30 @@ test('resolvePrimaryThenOptionalFallback still rejects primary failures', async 
   })
 })
 
+test('resolvePrimaryThenOptionalFallback settles fallback rejection even when primary fails', async () => {
+  const unhandledRejections: unknown[] = []
+  const handleUnhandledRejection = (reason: unknown) => {
+    unhandledRejections.push(reason)
+  }
+
+  process.on('unhandledRejection', handleUnhandledRejection)
+
+  try {
+    await assert.rejects(() => {
+      return resolvePrimaryThenOptionalFallback(
+        Promise.reject(new Error('primary failed')),
+        Promise.reject(new Error('fallback failed')),
+        () => undefined
+      )
+    })
+
+    await new Promise(resolve => setImmediate(resolve))
+    assert.deepEqual(unhandledRejections, [])
+  } finally {
+    process.off('unhandledRejection', handleUnhandledRejection)
+  }
+})
+
 test('resolvePrimaryThenOptionalFallback exposes primary results before fallback resolves', async () => {
   let resolvePrimary!: (value: string) => void
   let resolveFallback!: (value: string) => void
