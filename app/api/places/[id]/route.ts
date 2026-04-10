@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { pickPrimaryPhoto } from '@/lib/place-photo'
-import type { NookPhoto } from '@/types/nook'
 
 const PLACES_DETAIL_URL = 'https://places.googleapis.com/v1/places'
 
@@ -45,15 +43,6 @@ interface PlaceDetailApiResponse {
     openNow?: boolean
     weekdayDescriptions?: string[]
   }
-  photos?: Array<{
-    name: string
-    widthPx: number
-    heightPx: number
-  }>
-}
-
-interface PlaceDetailResponse extends Omit<PlaceDetailApiResponse, 'photos'> {
-  photo?: NookPhoto
 }
 
 export async function GET(
@@ -82,7 +71,6 @@ export async function GET(
           'reviewSummary',
           'generativeSummary',
           'reviews',
-          'photos',
         ].join(','),
     },
     next: { revalidate: 3600 },
@@ -94,12 +82,5 @@ export async function GET(
   }
 
   const data = (await res.json()) as PlaceDetailApiResponse
-  const { photos, ...rest } = data
-
-  const response: PlaceDetailResponse = {
-    ...rest,
-    photo: pickPrimaryPhoto(photos),
-  }
-
-  return NextResponse.json(response)
+  return NextResponse.json(data)
 }

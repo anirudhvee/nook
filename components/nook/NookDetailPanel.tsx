@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { ArrowLeft, Star, MapPin, Clock, BookmarkPlus, Wifi, Plug, Volume2, Laptop } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { buildPlacePhotoUrl } from '@/lib/place-photo'
+import { PlacePhotoAttribution } from '@/components/place/PlacePhotoAttribution'
 import { NOOK_TYPE_LABELS } from '@/types/nook'
 import type { NookPlace, NookPhoto } from '@/types/nook'
 
@@ -82,6 +83,7 @@ interface Props {
 
 export function NookDetailPanel({ nook, onClose }: Props) {
   const [detail, setDetail] = useState<PlaceDetail | null>(null)
+  const [photo, setPhoto] = useState<NookPhoto | undefined>(nook.photo)
   const [fetching, setFetching] = useState(true)
   const [signals, setSignals] = useState<string[]>([])
   const [signalsLoading, setSignalsLoading] = useState(true)
@@ -94,6 +96,7 @@ export function NookDetailPanel({ nook, onClose }: Props) {
     async function loadPanelData() {
       if (!cancelled) {
         setDetail(null)
+        setPhoto(nook.photo)
         setSignals([])
         setAiSummary(null)
         setFetching(true)
@@ -101,9 +104,24 @@ export function NookDetailPanel({ nook, onClose }: Props) {
       }
 
       try {
-        const detailResponse = await fetch(`/api/places/${encodeURIComponent(nook.id)}`, {
+        const photoPromise = nook.photo
+          ? Promise.resolve<{ photo?: NookPhoto }>({ photo: nook.photo })
+          : fetch(`/api/places/${encodeURIComponent(nook.id)}/photo`, {
+              signal: controller.signal,
+            }).then(async response => {
+              if (!response.ok) return { photo: undefined }
+              return await response.json() as { photo?: NookPhoto }
+            })
+
+        const detailPromise = fetch(`/api/places/${encodeURIComponent(nook.id)}`, {
           signal: controller.signal,
         })
+
+        const [photoData, detailResponse] = await Promise.all([photoPromise, detailPromise])
+
+        if (!cancelled) {
+          setPhoto(photoData.photo)
+        }
 
         if (!detailResponse.ok) return
 
@@ -167,7 +185,6 @@ export function NookDetailPanel({ nook, onClose }: Props) {
     detail?.generativeSummary?.overview?.text ??
     aiSummary ??
     null
-  const photo = detail?.photo ?? nook.photo
   const summaryAttribution =
     reviewSummary === aiSummary && aiSummary != null
       ? 'Summarized with AI'
@@ -223,6 +240,7 @@ export function NookDetailPanel({ nook, onClose }: Props) {
               fetchPriority="high"
               className="object-cover"
             />
+            <PlacePhotoAttribution attributions={photo.authorAttributions} />
           </div>
         )}
 

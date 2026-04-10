@@ -11,7 +11,18 @@ import {
 
 test('pickPrimaryPhoto returns the first available Google photo', () => {
   const photo = pickPrimaryPhoto([
-    { name: 'places/abc/photos/first', widthPx: 640, heightPx: 480 },
+    {
+      name: 'places/abc/photos/first',
+      widthPx: 640,
+      heightPx: 480,
+      authorAttributions: [
+        {
+          displayName: 'Jane Doe',
+          uri: 'https://example.com/jane',
+          photoUri: 'https://example.com/jane.jpg',
+        },
+      ],
+    },
     { name: 'places/abc/photos/second', widthPx: 900, heightPx: 600 },
   ])
 
@@ -19,12 +30,27 @@ test('pickPrimaryPhoto returns the first available Google photo', () => {
     ref: 'places/abc/photos/first',
     width: 640,
     height: 480,
+    authorAttributions: [
+      {
+        displayName: 'Jane Doe',
+        uri: 'https://example.com/jane',
+        photoUri: 'https://example.com/jane.jpg',
+      },
+    ],
   })
 })
 
 test('pickPrimaryPhoto returns undefined when no photos are available', () => {
   assert.equal(pickPrimaryPhoto(undefined), undefined)
   assert.equal(pickPrimaryPhoto([]), undefined)
+})
+
+test('pickPrimaryPhoto keeps an empty author attribution list when none is provided', () => {
+  const photo = pickPrimaryPhoto([
+    { name: 'places/abc/photos/first', widthPx: 640, heightPx: 480 },
+  ])
+
+  assert.deepEqual(photo?.authorAttributions, [])
 })
 
 test('isValidPlacePhotoRef accepts the expected Places photo resource shape', () => {

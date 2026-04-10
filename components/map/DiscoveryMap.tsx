@@ -23,6 +23,7 @@ import { AuthControls } from '@/components/auth/AuthControls'
 import { NOOK_TYPE_LABELS } from '@/types/nook'
 import type { NookPlace, NookType, FilterType } from '@/types/nook'
 import { NookDetailPanel } from '@/components/nook/NookDetailPanel'
+import { PlacePhotoAttribution } from '@/components/place/PlacePhotoAttribution'
 import { SearchPill } from '@/components/map/SearchPill'
 import {
   DEFAULT_RADIUS_M,
@@ -258,16 +259,22 @@ function PlacesPanel({
                   <NookTypeIcon type={nook.type} className="w-8 h-8 text-muted-foreground/25" />
                 </div>
                 {nook.photo && (
-                  <Image
-                    src={buildPlacePhotoUrl(nook.photo.ref, 640)}
-                    alt={nook.name}
-                    fill
-                    sizes="300px"
-                    unoptimized
-                    loading={shouldEagerLoadPhoto ? 'eager' : 'lazy'}
-                    fetchPriority={shouldEagerLoadPhoto ? 'high' : 'auto'}
-                    className="object-cover"
-                  />
+                  <>
+                    <Image
+                      src={buildPlacePhotoUrl(nook.photo.ref, 640)}
+                      alt={nook.name}
+                      fill
+                      sizes="300px"
+                      unoptimized
+                      loading={shouldEagerLoadPhoto ? 'eager' : 'lazy'}
+                      fetchPriority={shouldEagerLoadPhoto ? 'high' : 'auto'}
+                      className="object-cover"
+                    />
+                    <PlacePhotoAttribution
+                      attributions={nook.photo.authorAttributions}
+                      linkToSource={false}
+                    />
+                  </>
                 )}
                 <span className="absolute top-2 right-2 p-1.5 rounded-full bg-white/80 backdrop-blur-sm text-muted-foreground">
                   <Heart className="w-3.5 h-3.5" />
@@ -591,17 +598,22 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
 
   const fetchAndOpenNook = useCallback(async (id: string) => {
     try {
-      const res = await fetch(`/api/places/${encodeURIComponent(id)}`)
-      if (!res.ok) return
-      const raw = await res.json() as {
+      const [detailRes, photoRes] = await Promise.all([
+        fetch(`/api/places/${encodeURIComponent(id)}`),
+        fetch(`/api/places/${encodeURIComponent(id)}/photo`),
+      ])
+      if (!detailRes.ok) return
+      const raw = await detailRes.json() as {
         displayName?: { text?: string }
         formattedAddress?: string
         addressComponents?: Array<{ longText: string; types: string[] }>
         location?: { latitude: number; longitude: number }
         rating?: number
         types?: string[]
-        photo?: NookPlace['photo']
       }
+      const photoPayload = photoRes.ok
+        ? await photoRes.json() as { photo?: NookPlace['photo'] }
+        : { photo: undefined }
 
       const types = raw.types ?? []
       const nookType: NookType =
@@ -626,7 +638,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
         type: nookType,
         rating: raw.rating,
         workSignals: [],
-        photo: raw.photo,
+        photo: photoPayload.photo,
       }
 
       handleSelectNook(nook)

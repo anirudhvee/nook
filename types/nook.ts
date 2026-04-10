@@ -8,10 +8,17 @@ export const NOOK_TYPE_LABELS: Record<NookType, string> = {
   other: 'other',
 }
 
+export interface NookPhotoAuthorAttribution {
+  displayName?: string
+  uri?: string
+  photoUri?: string
+}
+
 export interface NookPhoto {
   ref: string
   width: number
   height: number
+  authorAttributions: NookPhotoAuthorAttribution[]
 }
 
 export interface NookPlace {

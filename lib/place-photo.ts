@@ -1,9 +1,13 @@
-import type { NookPhoto } from '@/types/nook'
+import type {
+  NookPhoto,
+  NookPhotoAuthorAttribution,
+} from '@/types/nook'
 
 type GooglePlacePhoto = {
   name: string
   widthPx: number
   heightPx: number
+  authorAttributions?: NookPhotoAuthorAttribution[]
 }
 
 export const DEFAULT_PLACE_PHOTO_WIDTH = 400
@@ -43,6 +47,7 @@ export function pickPrimaryPhoto(
     ref: photo.name,
     width: photo.widthPx,
     height: photo.heightPx,
+    authorAttributions: photo.authorAttributions ?? [],
   }
 }
 
