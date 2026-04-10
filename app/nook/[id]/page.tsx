@@ -1,10 +1,3 @@
-import { redirect } from 'next/navigation'
+import { DiscoveryPage } from '@/components/map/DiscoveryPage'
 
-interface Props {
-  params: Promise<{ id: string }>
-}
-
-export default async function NookDetailPage({ params }: Props) {
-  const { id } = await params
-  redirect(`/?nook=${encodeURIComponent(id)}`)
-}
+export default DiscoveryPage

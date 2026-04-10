@@ -39,7 +39,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 nook/
 ├── app/                  # Next.js App Router pages
 │   ├── page.tsx          # Home / discovery page
-│   ├── nook/[id]/        # Redirects to the discovery page with ?nook=<place_id>
+│   ├── nook/[id]/        # Discovery page with a canonical /nook/<place_id> URL
 │   ├── passport/         # User's visited nooks (stamp collection)
 │   └── api/              # API routes
 │       ├── places/       # Google Places (New) proxy — nearby search
