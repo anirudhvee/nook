@@ -232,11 +232,18 @@ function matchesPromotionTokens(suggestion: SearchBoxSuggestion, promotionTokens
 
   return getSuggestionNameCandidates(suggestion).some(candidate => {
     const candidateTokens = normalizeSearchText(candidate).split(' ').filter(Boolean)
-    if (candidateTokens.length < promotionTokens.length) return false
+    const comparableLength = Math.min(candidateTokens.length, promotionTokens.length)
+    if (comparableLength === 0) return false
 
-    return promotionTokens.every((token, index) => {
-      return candidateTokens[index]?.startsWith(token)
+    const sharedPrefixMatches = Array.from({ length: comparableLength }).every((_, index) => {
+      return candidateTokens[index]?.startsWith(promotionTokens[index] ?? '')
     })
+    if (!sharedPrefixMatches) return false
+
+    return (
+      candidateTokens.length >= promotionTokens.length
+      || candidateTokens.every((token, index) => token.startsWith(promotionTokens[index] ?? ''))
+    )
   })
 }
 

@@ -116,6 +116,11 @@ test('buildSuggestionFallback prefers full address fallback over partial street 
     promotionTokens: ['starbucks'],
     query: 'market street starbucks',
   })
+  assert.deepEqual(buildSuggestionFallback('150 market street starbucks san francisco'), {
+    addressTokens: ['150', 'market', 'street'],
+    promotionTokens: ['starbucks', 'san', 'francisco'],
+    query: 'market street starbucks san francisco',
+  })
 })
 
 test('mergeSuggestions de-duplicates while preserving order', () => {
@@ -347,6 +352,41 @@ test('mergeSuggestionResults skips promotion when fallback only matches locality
   )
 
   assert.deepEqual(merged.map(suggestion => suggestion.mapbox_id), ['address-1', 'poi-1'])
+})
+
+test('mergeSuggestionResults ignores trailing locality tokens after a matched venue name', () => {
+  const primary = [
+    {
+      ...makeSuggestion('address-1'),
+      feature_type: 'address',
+      address: '150 Market Street',
+      full_address: '150 Market Street, San Francisco, California 94105, United States',
+      name: '150 Market Street',
+    },
+  ] as SearchBoxSuggestion[]
+
+  const fallback = [
+    {
+      ...makeSuggestion('poi-1'),
+      feature_type: 'poi',
+      name: 'Starbucks',
+      address: '150 Market Street',
+      full_address: '150 Market Street, San Francisco, California 94105, United States',
+    },
+  ] as SearchBoxSuggestion[]
+
+  const merged = mergeSuggestionResults(
+    primary,
+    fallback,
+    {
+      addressTokens: ['150', 'market', 'street'],
+      promotionTokens: ['starbucks', 'san', 'francisco'],
+      query: 'market street starbucks san francisco',
+    },
+    5
+  )
+
+  assert.deepEqual(merged.map(suggestion => suggestion.mapbox_id), ['poi-1', 'address-1'])
 })
 
 test('mergeSuggestionResults promotes POIs for street names that include street-type abbreviations', () => {
