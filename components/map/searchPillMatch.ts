@@ -1,4 +1,5 @@
 import type { SearchBoxSuggestion } from '@mapbox/search-js-core'
+import { getCanonicalStreetType } from './searchPillTokens'
 
 const DIRECTION_TOKENS: Record<string, string> = {
   n: 'north',
@@ -7,39 +8,11 @@ const DIRECTION_TOKENS: Record<string, string> = {
   w: 'west',
 }
 
-const STREET_TYPE_TOKENS: Record<string, string> = {
-  st: 'street',
-  street: 'street',
-  ave: 'avenue',
-  av: 'avenue',
-  avenue: 'avenue',
-  blvd: 'boulevard',
-  boulevard: 'boulevard',
-  rd: 'road',
-  road: 'road',
-  dr: 'drive',
-  drive: 'drive',
-  ln: 'lane',
-  lane: 'lane',
-  ct: 'court',
-  court: 'court',
-  pl: 'place',
-  place: 'place',
-  ter: 'terrace',
-  terrace: 'terrace',
-  hwy: 'highway',
-  highway: 'highway',
-  pkwy: 'parkway',
-  parkway: 'parkway',
-  sq: 'square',
-  square: 'square',
-}
-
 function normalizeToken(token: string): string {
   const direction = DIRECTION_TOKENS[token]
   if (direction) return direction
 
-  const streetType = STREET_TYPE_TOKENS[token]
+  const streetType = getCanonicalStreetType(token)
   if (streetType) return streetType
 
   return token
