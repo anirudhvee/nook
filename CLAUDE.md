@@ -44,7 +44,7 @@ nook/
 │   └── api/              # API routes
 │       ├── places/       # Google Places (New) proxy — nearby search
 │       ├── places/[id]/  # Google Places (New) detail — reviews, hours, summary
-│       ├── nooks/        # Nook CRUD
+│       ├── nooks/        # Reserved / deprecated placeholder — not part of the main product flow
 │       ├── reviews/      # (stub — unused on main; active on feature/apify-reviews)
 │       └── ai/           # OpenAI work-signal parsing + Supabase cache
 ├── components/           # Shared UI components
@@ -77,9 +77,8 @@ nook/
 
 1. **Discovery map** — Mapbox map showing nearby nooks, filterable by type (café, library, coworking, other)
 2. **Nook detail page** — WiFi quality, outlet availability, noise level, hours, laptop-friendliness, AI-parsed review highlights
-3. **Submit a nook** — User can submit a spot they've enjoyed working at
-4. **Passport** — Stamp collection of places the user has worked from (Flighty-style)
-5. **Share** — "I'm working from [Nook] today" shareable card
+3. **Passport** — Stamp collection of places the user has worked from (Flighty-style)
+4. **Share** — "I'm working from [Nook] today" shareable card
 
 ---
 
@@ -140,6 +139,8 @@ OPENAI_API_KEY=
 
 Schema lives in `/supabase/migrations/` — always read these files before writing any database-related code. Never infer schema from memory.
 
+Google Places nearby search is the source of truth for venue discovery on `main`. Nook-owned data should layer on top of Google places IDs rather than introduce a second venue catalog for end users to submit and browse.
+
 ---
 
 ## Review Data Strategy
@@ -190,7 +191,7 @@ laptop-friendly | not laptop-friendly
 |---|---|
 | `work_signals` | Cached OpenAI signals + summary per place (`nook_id text PK`, `signals jsonb`, `summary text`, `parsed_at`) |
 | `stamps` | Passport stamps — user ↔ nook visits (future feature) |
-| `nooks` | Submitted venue records (schema exists, not yet wired to UI) |
+| `nooks` | Reserved internal table from earlier planning; not part of the current end-user roadmap on `main` |
 
 > The `reviews` table existed for Apify caching and has been truncated; it is effectively unused on `main`. Its schema is preserved in migrations for reference.
 
@@ -203,6 +204,7 @@ laptop-friendly | not laptop-friendly
 - **Commit after each working feature** with a descriptive message.
 - **Never hardcode API keys.** Always use environment variables.
 - **Use `/compact`** if the session context gets long. Start a new session between features.
+- Do not build end-user venue submission flows on `main` unless the product direction changes. Discovery should stay anchored to Google Places nearby results, with Nook-specific metadata layered on by `place_id`.
 - The Mapbox style should use warm earth tones — reference the Mapbox Studio "Outdoors" style as a base.
 - Google Places API (New) `nearbySearch` is the primary endpoint for finding nooks. Filter by `type`: `cafe`, `library`, `lodging`.
 - Google Places API (New) detail endpoint fields in use: `displayName`, `formattedAddress`, `addressComponents`, `rating`, `types`, `regularOpeningHours`, `reviewSummary`, `generativeSummary`, `reviews`.
