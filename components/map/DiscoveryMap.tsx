@@ -273,6 +273,7 @@ function PlacesPanel({
                     <PlacePhotoAttribution
                       attributions={nook.photo.authorAttributions}
                       linkToSource={false}
+                      compact
                     />
                   </>
                 )}
