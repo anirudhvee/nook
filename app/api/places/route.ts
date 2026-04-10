@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import type { NookPlace, NookType, FilterType } from '@/types/nook'
+import { pickPrimaryPhoto } from '@/lib/place-photo'
 
 const PLACES_API_URL = 'https://places.googleapis.com/v1/places:searchNearby'
 
@@ -32,6 +33,16 @@ interface PlacesApiPlace {
   rating?: number
   types?: string[]
   businessStatus?: string
+  photos?: Array<{
+    name: string
+    widthPx: number
+    heightPx: number
+    authorAttributions?: Array<{
+      displayName?: string
+      uri?: string
+      photoUri?: string
+    }>
+  }>
 }
 
 interface PlacesApiResponse {
@@ -82,7 +93,7 @@ export async function GET(request: NextRequest) {
       'Content-Type': 'application/json',
       'X-Goog-Api-Key': apiKey,
       'X-Goog-FieldMask':
-        'places.id,places.displayName,places.formattedAddress,places.addressComponents,places.location,places.rating,places.types,places.businessStatus',
+        'places.id,places.displayName,places.formattedAddress,places.addressComponents,places.location,places.rating,places.types,places.businessStatus,places.photos',
     },
     body: JSON.stringify(body),
   })
@@ -109,6 +120,7 @@ export async function GET(request: NextRequest) {
       type: inferNookType(p.types ?? []),
       rating: p.rating,
       workSignals: [],
+      photo: pickPrimaryPhoto(p.photos),
     }))
 
   return NextResponse.json({ places })

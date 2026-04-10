@@ -46,7 +46,7 @@ interface PlaceDetailApiResponse {
 }
 
 export async function GET(
-  _req: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
@@ -60,7 +60,18 @@ export async function GET(
     headers: {
       'X-Goog-Api-Key': apiKey,
       'X-Goog-FieldMask':
-        'displayName,formattedAddress,addressComponents,location,rating,types,regularOpeningHours,reviewSummary,generativeSummary,reviews',
+        [
+          'displayName',
+          'formattedAddress',
+          'addressComponents',
+          'location',
+          'rating',
+          'types',
+          'regularOpeningHours',
+          'reviewSummary',
+          'generativeSummary',
+          'reviews',
+        ].join(','),
     },
     next: { revalidate: 3600 },
   })

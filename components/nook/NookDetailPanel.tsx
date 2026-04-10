@@ -1,9 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import Image from 'next/image'
 import { ArrowLeft, Star, MapPin, Clock, BookmarkPlus, Wifi, Plug, Volume2, Laptop } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { NookPlace, NookType } from '@/types/nook'
+import { buildPlacePhotoUrl } from '@/lib/place-photo'
+import { PlacePhotoAttribution } from '@/components/place/PlacePhotoAttribution'
+import { NOOK_TYPE_LABELS } from '@/types/nook'
+import type { NookPlace, NookPhoto } from '@/types/nook'
 
 interface PlaceReview {
   rating?: number
@@ -17,6 +21,7 @@ interface PlaceReview {
 
 interface PlaceDetail {
   rating?: number
+  photo?: NookPhoto
   reviewSummary?: {
     text?: {
       text?: string
@@ -35,13 +40,6 @@ interface PlaceDetail {
     openNow?: boolean
     weekdayDescriptions?: string[]
   }
-}
-
-const TYPE_LABELS: Record<NookType, string> = {
-  cafe: 'café',
-  library: 'library',
-  coworking: 'coworking',
-  other: 'other',
 }
 
 function signalIcon(signal: string) {
@@ -85,18 +83,28 @@ interface Props {
 
 export function NookDetailPanel({ nook, onClose }: Props) {
   const [detail, setDetail] = useState<PlaceDetail | null>(null)
+  const [photo, setPhoto] = useState<NookPhoto | undefined>(nook.photo)
   const [fetching, setFetching] = useState(true)
   const [signals, setSignals] = useState<string[]>([])
   const [signalsLoading, setSignalsLoading] = useState(true)
   const [aiSummary, setAiSummary] = useState<string | null>(null)
+  const photoPropRef = useRef(nook.photo)
+
+  useEffect(() => {
+    photoPropRef.current = nook.photo
+    setPhoto(nook.photo)
+  }, [nook.id, nook.photo])
 
   useEffect(() => {
     let cancelled = false
     const controller = new AbortController()
 
     async function loadPanelData() {
+      const initialPhoto = photoPropRef.current
+
       if (!cancelled) {
         setDetail(null)
+        setPhoto(initialPhoto)
         setSignals([])
         setAiSummary(null)
         setFetching(true)
@@ -104,8 +112,25 @@ export function NookDetailPanel({ nook, onClose }: Props) {
       }
 
       try {
-        const detailResponse = await fetch(`/api/places/${encodeURIComponent(nook.id)}`, {
+        const photoPromise = initialPhoto
+          ? Promise.resolve<{ photo?: NookPhoto }>({ photo: initialPhoto })
+          : fetch(`/api/places/${encodeURIComponent(nook.id)}/photo`, {
+              signal: controller.signal,
+            }).then(async response => {
+              if (!response.ok) return { photo: undefined }
+              return await response.json() as { photo?: NookPhoto }
+            }).catch(() => ({ photo: undefined }))
+
+        const detailPromise = fetch(`/api/places/${encodeURIComponent(nook.id)}`, {
           signal: controller.signal,
+        })
+
+        const detailResponse = await detailPromise
+
+        void photoPromise.then(photoData => {
+          if (!cancelled) {
+            setPhoto(photoData.photo)
+          }
         })
 
         if (!detailResponse.ok) return
@@ -196,7 +221,7 @@ export function NookDetailPanel({ nook, onClose }: Props) {
             <h2 className="text-base font-semibold leading-snug">{nook.name}</h2>
             <div className="mt-1.5 flex flex-wrap items-center gap-2">
               <span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                {TYPE_LABELS[nook.type]}
+                {NOOK_TYPE_LABELS[nook.type]}
               </span>
               {nook.neighborhood && (
                 <span className="text-xs text-muted-foreground">{nook.neighborhood}</span>
@@ -213,6 +238,22 @@ export function NookDetailPanel({ nook, onClose }: Props) {
       </div>
 
       <div className="flex-1 space-y-4 overflow-y-auto px-4 pt-3 pb-4">
+        {photo && (
+          <div className="relative h-48 overflow-hidden rounded-2xl border border-border bg-muted">
+            <Image
+              src={buildPlacePhotoUrl(photo.ref, 900)}
+              alt={nook.name}
+              fill
+              sizes="300px"
+              unoptimized
+              loading="eager"
+              fetchPriority="high"
+              className="object-cover"
+            />
+            <PlacePhotoAttribution attributions={photo.authorAttributions} />
+          </div>
+        )}
+
         <div className="flex items-start gap-2.5">
           <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
           <span className="text-sm leading-snug">{nook.address}</span>
