@@ -598,13 +598,6 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
 
   const fetchAndOpenNook = useCallback(async (id: string) => {
     try {
-      const photoPromise = fetch(`/api/places/${encodeURIComponent(id)}/photo`)
-        .then(async response => {
-          if (!response.ok) return { photo: undefined as NookPlace['photo'] }
-          return await response.json() as { photo?: NookPlace['photo'] }
-        })
-        .catch(() => ({ photo: undefined as NookPlace['photo'] }))
-
       const detailRes = await fetch(`/api/places/${encodeURIComponent(id)}`)
       if (!detailRes.ok) return
       const raw = await detailRes.json() as {
@@ -642,16 +635,6 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
       }
 
       handleSelectNook(nook)
-
-      void photoPromise.then(photoPayload => {
-        if (!photoPayload.photo || selectedIdRef.current !== id) return
-
-        setDetailNook(current =>
-          current?.id === id
-            ? { ...current, photo: photoPayload.photo }
-            : current,
-        )
-      })
     } catch {
       // network error
     }
