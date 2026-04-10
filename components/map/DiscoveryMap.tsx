@@ -428,6 +428,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
   }, [])
 
   const clearSelectedNook = useCallback(() => {
+    requestedNookIdRef.current = null
     clearSelectedNookState()
     window.history.pushState(null, '', '/')
   }, [clearSelectedNookState])
@@ -590,6 +591,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
   }, [])
 
   const handleSelectNook = useCallback((nook: NookPlace) => {
+    requestedNookIdRef.current = null
     applySelectedNook(nook)
     window.history.pushState(null, '', getNookUrl(nook.id))
   }, [applySelectedNook])
@@ -667,7 +669,10 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
       return
     }
 
-    if (selectedIdRef.current === id && detailNookRef.current?.id === id) return
+    if (selectedIdRef.current === id && detailNookRef.current?.id === id) {
+      requestedNookIdRef.current = null
+      return
+    }
 
     const found = nooksRef.current.find(nook => nook.id === id)
     if (found) {
