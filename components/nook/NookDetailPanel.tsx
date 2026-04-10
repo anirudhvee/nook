@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
 import { ArrowLeft, Star, MapPin, Clock, BookmarkPlus, Wifi, Plug, Volume2, Laptop } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -88,15 +88,23 @@ export function NookDetailPanel({ nook, onClose }: Props) {
   const [signals, setSignals] = useState<string[]>([])
   const [signalsLoading, setSignalsLoading] = useState(true)
   const [aiSummary, setAiSummary] = useState<string | null>(null)
+  const photoPropRef = useRef(nook.photo)
+
+  useEffect(() => {
+    photoPropRef.current = nook.photo
+    setPhoto(nook.photo)
+  }, [nook.id, nook.photo])
 
   useEffect(() => {
     let cancelled = false
     const controller = new AbortController()
 
     async function loadPanelData() {
+      const initialPhoto = photoPropRef.current
+
       if (!cancelled) {
         setDetail(null)
-        setPhoto(nook.photo)
+        setPhoto(initialPhoto)
         setSignals([])
         setAiSummary(null)
         setFetching(true)
@@ -104,24 +112,26 @@ export function NookDetailPanel({ nook, onClose }: Props) {
       }
 
       try {
-        const photoPromise = nook.photo
-          ? Promise.resolve<{ photo?: NookPhoto }>({ photo: nook.photo })
+        const photoPromise = initialPhoto
+          ? Promise.resolve<{ photo?: NookPhoto }>({ photo: initialPhoto })
           : fetch(`/api/places/${encodeURIComponent(nook.id)}/photo`, {
               signal: controller.signal,
             }).then(async response => {
               if (!response.ok) return { photo: undefined }
               return await response.json() as { photo?: NookPhoto }
-            })
+            }).catch(() => ({ photo: undefined }))
 
         const detailPromise = fetch(`/api/places/${encodeURIComponent(nook.id)}`, {
           signal: controller.signal,
         })
 
-        const [photoData, detailResponse] = await Promise.all([photoPromise, detailPromise])
+        const detailResponse = await detailPromise
 
-        if (!cancelled) {
-          setPhoto(photoData.photo)
-        }
+        void photoPromise.then(photoData => {
+          if (!cancelled) {
+            setPhoto(photoData.photo)
+          }
+        })
 
         if (!detailResponse.ok) return
 
@@ -173,7 +183,7 @@ export function NookDetailPanel({ nook, onClose }: Props) {
       setAiSummary(null)
       controller.abort()
     }
-  }, [nook.id, nook.photo])
+  }, [nook.id])
 
   const rating = detail?.rating ?? nook.rating
   const openNow = detail?.regularOpeningHours?.openNow
