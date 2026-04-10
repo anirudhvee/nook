@@ -3,7 +3,7 @@
 import type { CSSProperties } from 'react'
 import { useRef, useEffect, useState, useCallback } from 'react'
 import Image from 'next/image'
-import { useSearchParams } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import mapboxgl from 'mapbox-gl'
 import {
   ChevronUp,
@@ -33,6 +33,7 @@ import {
   createCirclePolygon,
   getCircleBounds,
 } from '@/components/map/radiusUtils'
+import { getNookUrl, getSelectedNookIdFromUrl } from '@/components/map/nookRoute'
 import { buildPlacePhotoUrl } from '@/lib/place-photo'
 
 const SRC = 'nooks'
@@ -320,7 +321,8 @@ function PlacesPanel({
 }
 
 export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number] }) {
-  const searchParams = useSearchParams()
+  const pathname = usePathname()
+  const urlSelectedNookId = getSelectedNookIdFromUrl(pathname)
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<mapboxgl.Map | null>(null)
   const initialCenterRef = useRef<[number, number]>(initialCenter)
@@ -331,10 +333,11 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
   const nooksRef = useRef<NookPlace[]>([])
   const pointMarkersRef = useRef<Map<string, mapboxgl.Marker>>(new Map())
   const selectedIdRef = useRef<string | null>(null)
+  const detailNookRef = useRef<NookPlace | null>(null)
+  const requestedNookIdRef = useRef<string | null>(null)
   const primaryColorRef = useRef(COLOR_NORMAL)
   const darkerPrimaryRef = useRef(COLOR_SELECTED)
   const mapSyncModeRef = useRef<'nearby' | 'search' | 'frozen'>('nearby')
-  const pendingNookIdRef = useRef<string | null>(searchParams.get('nook'))
   const nearbyRequestIdRef = useRef(0)
   const searchedRequestIdRef = useRef(0)
   const radiusMRef = useRef(DEFAULT_RADIUS_M)
@@ -412,7 +415,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     return data.places ?? []
   }, [])
 
-  const clearSelectedNook = useCallback(() => {
+  const clearSelectedNookState = useCallback(() => {
     if (selectedIdRef.current) {
       const marker = pointMarkersRef.current.get(selectedIdRef.current)
       if (marker) setMarkerColor(marker, primaryColorRef.current)
@@ -421,8 +424,14 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     setDetailNook(null)
     setSelectedId(null)
     selectedIdRef.current = null
-    window.history.pushState(null, '', '/')
+    detailNookRef.current = null
   }, [])
+
+  const clearSelectedNook = useCallback(() => {
+    requestedNookIdRef.current = null
+    clearSelectedNookState()
+    window.history.pushState(null, '', '/')
+  }, [clearSelectedNookState])
 
   const invalidateSearchedResults = useCallback(() => {
     searchedRequestIdRef.current += 1
@@ -564,7 +573,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     })
   }, [clearSelectedNook, filter, fitToCircle, isRadiusActive, loadNearbyPlaces])
 
-  const handleSelectNook = useCallback((nook: NookPlace) => {
+  const applySelectedNook = useCallback((nook: NookPlace) => {
     if (selectedIdRef.current && selectedIdRef.current !== nook.id) {
       const prev = pointMarkersRef.current.get(selectedIdRef.current)
       if (prev) setMarkerColor(prev, primaryColorRef.current)
@@ -578,8 +587,14 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
 
     mapRef.current?.flyTo({ center: [nook.lng, nook.lat], zoom: 15, speed: 1.8 })
     setDetailNook(nook)
-    window.history.pushState(null, '', `/?nook=${encodeURIComponent(nook.id)}`)
+    detailNookRef.current = nook
   }, [])
+
+  const handleSelectNook = useCallback((nook: NookPlace) => {
+    requestedNookIdRef.current = null
+    applySelectedNook(nook)
+    window.history.pushState(null, '', getNookUrl(nook.id))
+  }, [applySelectedNook])
 
   const handlePanelClose = useCallback(() => {
     clearSelectedNook()
@@ -602,10 +617,10 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     void loadSearchedPlaces(location, filter, { mapTarget: 'search', updateMap: true })
   }, [clearSelectedNook, filter, fitToCircle, isRadiusActive, loadSearchedPlaces])
 
-  const fetchAndOpenNook = useCallback(async (id: string) => {
+  const fetchNookById = useCallback(async (id: string): Promise<NookPlace | null> => {
     try {
       const detailRes = await fetch(`/api/places/${encodeURIComponent(id)}`)
-      if (!detailRes.ok) return
+      if (!detailRes.ok) return null
       const raw = await detailRes.json() as {
         displayName?: { text?: string }
         formattedAddress?: string
@@ -640,11 +655,47 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
         photo: undefined,
       }
 
-      handleSelectNook(nook)
+      return nook
     } catch {
       // network error
+      return null
     }
-  }, [handleSelectNook])
+  }, [])
+
+  const syncSelectedNookFromUrl = useCallback((id: string | null) => {
+    if (!id) {
+      requestedNookIdRef.current = null
+      clearSelectedNookState()
+      return
+    }
+
+    if (selectedIdRef.current === id && detailNookRef.current?.id === id) {
+      requestedNookIdRef.current = null
+      return
+    }
+
+    const found = nooksRef.current.find(nook => nook.id === id)
+    if (found) {
+      requestedNookIdRef.current = null
+      applySelectedNook(found)
+      return
+    }
+
+    if (requestedNookIdRef.current === id) return
+
+    requestedNookIdRef.current = id
+    clearSelectedNookState()
+    void fetchNookById(id).then(nook => {
+      if (requestedNookIdRef.current !== id) return
+      if (!nook) return
+
+      applySelectedNook(nook)
+    }).finally(() => {
+      if (requestedNookIdRef.current === id) {
+        requestedNookIdRef.current = null
+      }
+    })
+  }, [applySelectedNook, clearSelectedNookState, fetchNookById])
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return
@@ -919,21 +970,14 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     pointMarkersRef.current.forEach(marker => marker.remove())
     pointMarkersRef.current.clear()
 
-    const pendingId = pendingNookIdRef.current
-    if (!pendingId) clearSelectedNook()
-
     ;(map.getSource(SRC) as mapboxgl.GeoJSONSource)?.setData(toGeoJSON(mapNooks))
+    syncSelectedNookFromUrl(urlSelectedNookId)
+  }, [mapNooks, syncSelectedNookFromUrl, urlSelectedNookId])
 
-    if (!pendingId) return
-
-    pendingNookIdRef.current = null
-    const found = mapNooks.find(nook => nook.id === pendingId)
-    if (found) {
-      handleSelectNook(found)
-    } else {
-      void fetchAndOpenNook(pendingId)
-    }
-  }, [clearSelectedNook, fetchAndOpenNook, handleSelectNook, mapNooks])
+  useEffect(() => {
+    if (!mapLoadedRef.current) return
+    syncSelectedNookFromUrl(urlSelectedNookId)
+  }, [syncSelectedNookFromUrl, urlSelectedNookId])
 
   useEffect(() => {
     selectedIdRef.current = selectedId
