@@ -14,6 +14,7 @@ as $$
 declare
   current_user_id uuid := auth.uid();
   lock_key bigint;
+  effective_cooldown_window_minutes integer := greatest(coalesce(cooldown_window_minutes, 5), 5);
 begin
   if current_user_id is null then
     raise exception 'Not authenticated';
@@ -27,7 +28,7 @@ begin
     from public.stamps
     where user_id = current_user_id
       and nook_id = place_id
-      and stamped_at >= now() - make_interval(mins => cooldown_window_minutes)
+      and stamped_at >= now() - make_interval(mins => effective_cooldown_window_minutes)
   ) then
     return false;
   end if;

@@ -1,3 +1,4 @@
+import 'server-only'
 import { pickPrimaryPhoto } from '@/lib/place-photo'
 import type { NookPhoto, NookType } from '@/types/nook'
 
