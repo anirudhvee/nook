@@ -692,7 +692,10 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     let currentLng = sortedPins[0].lng
 
     function rotate(timestamp: number) {
-      if (!mapRef.current) return
+      if (!mapRef.current || !passportOpenRef.current) {
+        passportRotationRef.current = null
+        return
+      }
 
       if (lastTime == null) { lastTime = timestamp }
       const dt = (timestamp - lastTime) / 1000
@@ -714,6 +717,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     }
 
     map.once('moveend', () => {
+      if (!mapRef.current || !passportOpenRef.current) return
       passportRotationRef.current = requestAnimationFrame(rotate)
     })
   }, [clearPassportMarkers, hideNearbyMarkers, stopPassportRotation])
