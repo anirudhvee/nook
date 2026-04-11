@@ -186,6 +186,17 @@ export async function POST(req: Request) {
   }
 
   if (existingRow && needsSummaryBackfill && reviews.length === 0) {
+    const { error: updateError } = await supabase
+      .from('work_signals')
+      .update({
+        parsed_at: parsedAt,
+      })
+      .eq('nook_id', placeId)
+
+    if (updateError) {
+      return NextResponse.json({ error: updateError.message }, { status: 500 })
+    }
+
     return NextResponse.json({
       signals: existingRow.signals ?? [],
       summary: null,
