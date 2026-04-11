@@ -40,6 +40,13 @@ interface OpenAIChatResponse {
   }>
 }
 
+interface ExistingWorkSignalsRow {
+  nook_id: string
+  signals: AllowedSignal[] | null
+  summary: string | null
+  parsed_at: string
+}
+
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000
 
@@ -58,34 +65,49 @@ async function fetchGoogleReviews(
   placeId: string,
   apiKey: string,
 ): Promise<ReviewInput[] | null> {
-  const response = await fetch(`${PLACES_DETAIL_URL}/${encodeURIComponent(placeId)}`, {
-    headers: {
-      'X-Goog-Api-Key': apiKey,
-      'X-Goog-FieldMask': ['reviews.rating', 'reviews.text', 'reviews.originalText'].join(','),
-    },
-    next: { revalidate: 3600 },
-  })
+  try {
+    const response = await fetch(`${PLACES_DETAIL_URL}/${encodeURIComponent(placeId)}`, {
+      headers: {
+        'X-Goog-Api-Key': apiKey,
+        'X-Goog-FieldMask': ['reviews.rating', 'reviews.text', 'reviews.originalText'].join(','),
+      },
+      next: { revalidate: 3600 },
+    })
 
-  if (!response.ok) {
+    if (!response.ok) {
+      return null
+    }
+
+    const payload = (await response.json()) as GooglePlaceReviewsResponse
+    const reviews = payload.reviews ?? []
+
+    return reviews.flatMap(review => {
+      const textValue = review.text?.text?.trim() || review.originalText?.text?.trim() || ''
+      if (!textValue) return []
+
+      const ratingValue = review.rating
+      return [
+        {
+          text: textValue,
+          rating: typeof ratingValue === 'number' && Number.isFinite(ratingValue)
+            ? ratingValue
+            : null,
+        },
+      ]
+    })
+  } catch {
     return null
   }
+}
 
-  const payload = (await response.json()) as GooglePlaceReviewsResponse
-  const reviews = payload.reviews ?? []
-
-  return reviews.flatMap(review => {
-    const textValue = review.text?.text?.trim() || review.originalText?.text?.trim() || ''
-    if (!textValue) return []
-
-    const ratingValue = review.rating
-    return [
-      {
-        text: textValue,
-        rating: typeof ratingValue === 'number' && Number.isFinite(ratingValue)
-          ? ratingValue
-          : null,
-      },
-    ]
+function buildCachedSignalsResponse(
+  row: ExistingWorkSignalsRow,
+  options?: { summary?: string | null; cached?: boolean },
+) {
+  return NextResponse.json({
+    signals: row.signals ?? [],
+    summary: options?.summary ?? row.summary ?? null,
+    cached: options?.cached ?? true,
   })
 }
 
@@ -147,7 +169,7 @@ export async function POST(req: Request) {
     .from('work_signals')
     .select('nook_id, signals, summary, parsed_at')
     .eq('nook_id', placeId)
-    .maybeSingle()
+    .maybeSingle<ExistingWorkSignalsRow>()
 
   if (existingRowError) {
     return NextResponse.json({ error: existingRowError.message }, { status: 500 })
@@ -163,11 +185,7 @@ export async function POST(req: Request) {
     needsSummaryBackfill = !ttlExpired && generateSummary && existingRow.summary == null
 
     if (!ttlExpired && !emptySignalsRetry && !needsSummaryBackfill) {
-      return NextResponse.json({
-        signals: existingRow.signals ?? [],
-        summary: existingRow.summary ?? null,
-        cached: true,
-      })
+      return buildCachedSignalsResponse(existingRow)
     }
     // fall through to re-parse or backfill
   }
@@ -182,11 +200,9 @@ export async function POST(req: Request) {
 
   const reviews = await fetchGoogleReviews(placeId, googlePlacesKey)
   if (reviews == null) {
-    if (existingRow && needsSummaryBackfill) {
-      return NextResponse.json({
-        signals: existingRow.signals ?? [],
-        summary: null,
-        cached: false,
+    if (existingRow) {
+      return buildCachedSignalsResponse(existingRow, {
+        summary: needsSummaryBackfill ? null : existingRow.summary,
       })
     }
 
@@ -194,11 +210,7 @@ export async function POST(req: Request) {
   }
 
   if (existingRow && needsSummaryBackfill && reviews.length === 0) {
-    return NextResponse.json({
-      signals: existingRow.signals ?? [],
-      summary: null,
-      cached: false,
-    })
+    return buildCachedSignalsResponse(existingRow, { summary: null })
   }
 
   if (reviews.length === 0) {
