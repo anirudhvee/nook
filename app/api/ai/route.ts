@@ -127,10 +127,10 @@ async function generateWorkSummary(reviews: ReviewInput[], openAiKey: string): P
 }
 
 export async function POST(req: Request) {
-  let body: { place_id?: string; reviews?: unknown; generateSummary?: boolean } | null = null
+  let body: { place_id?: string; generateSummary?: boolean } | null = null
 
   try {
-    body = (await req.json()) as { place_id?: string; reviews?: unknown; generateSummary?: boolean }
+    body = (await req.json()) as { place_id?: string; generateSummary?: boolean }
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
@@ -186,17 +186,6 @@ export async function POST(req: Request) {
   }
 
   if (existingRow && needsSummaryBackfill && reviews.length === 0) {
-    const { error: updateError } = await supabase
-      .from('work_signals')
-      .update({
-        parsed_at: parsedAt,
-      })
-      .eq('nook_id', placeId)
-
-    if (updateError) {
-      return NextResponse.json({ error: updateError.message }, { status: 500 })
-    }
-
     return NextResponse.json({
       signals: existingRow.signals ?? [],
       summary: null,

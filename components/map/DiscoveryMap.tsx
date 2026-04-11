@@ -857,6 +857,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
       showNearbyMarkers()
 
       const zeroPad = { top: 0, bottom: 0, left: 0, right: 0 }
+      mapRef.current?.setPadding(zeroPad)
       const searchLoc = selectedSearchLocationRef.current
       if (mapSyncModeRef.current === 'search' && searchLoc) {
         if (isRadiusActive) {

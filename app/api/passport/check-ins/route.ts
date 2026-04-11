@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import {
   EMPTY_PASSPORT_CHECK_IN_SUMMARY,
-  getPassportCheckInCooldownCutoff,
   summarizePassportVisits,
   type PassportVisitRow,
 } from '@/lib/passport'
@@ -34,26 +33,6 @@ async function fetchVisitRows(
 
   return {
     data: (data ?? []) as PassportVisitRow[],
-    error,
-  }
-}
-
-async function fetchRecentCheckIn(
-  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
-  userId: string,
-  placeId: string,
-) {
-  const { data, error } = await supabase
-    .from('stamps')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('nook_id', placeId)
-    .gte('stamped_at', getPassportCheckInCooldownCutoff())
-    .limit(1)
-    .maybeSingle()
-
-  return {
-    hasRecentCheckIn: Boolean(data),
     error,
   }
 }
@@ -111,29 +90,19 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const { hasRecentCheckIn, error: recentCheckInError } = await fetchRecentCheckIn(
-    supabase,
-    user.id,
-    placeId,
+  const { data: checkInCreated, error: checkInError } = await supabase.rpc(
+    'create_passport_check_in',
+    {
+      place_id: placeId,
+    },
   )
-  if (recentCheckInError) {
-    return NextResponse.json(
-      { error: recentCheckInError.message },
-      { status: 500 },
-    )
+
+  if (checkInError) {
+    return NextResponse.json({ error: checkInError.message }, { status: 500 })
   }
 
-  if (hasRecentCheckIn) {
+  if (!checkInCreated) {
     return NextResponse.json({ error: RECENT_CHECK_IN_ERROR }, { status: 429 })
-  }
-
-  const { error: insertError } = await supabase.from('stamps').insert({
-    user_id: user.id,
-    nook_id: placeId,
-  })
-
-  if (insertError) {
-    return NextResponse.json({ error: insertError.message }, { status: 500 })
   }
 
   const { data, error: visitError } = await fetchVisitRows(
