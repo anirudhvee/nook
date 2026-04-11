@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import {
   EMPTY_PASSPORT_CHECK_IN_SUMMARY,
+  getPassportCheckInCooldownCutoff,
   summarizePassportVisits,
   type PassportVisitRow,
 } from '@/lib/passport'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+
+const RECENT_CHECK_IN_ERROR =
+  'You already checked in here recently. Try again later.'
 
 async function getAuthenticatedContext() {
   const supabase = await createServerSupabaseClient()
@@ -30,6 +34,26 @@ async function fetchVisitRows(
 
   return {
     data: (data ?? []) as PassportVisitRow[],
+    error,
+  }
+}
+
+async function fetchRecentCheckIn(
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  userId: string,
+  placeId: string,
+) {
+  const { data, error } = await supabase
+    .from('stamps')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('nook_id', placeId)
+    .gte('stamped_at', getPassportCheckInCooldownCutoff())
+    .limit(1)
+    .maybeSingle()
+
+  return {
+    hasRecentCheckIn: Boolean(data),
     error,
   }
 }
@@ -85,6 +109,22 @@ export async function POST(request: NextRequest) {
       { error: 'You must be signed in to check in.' },
       { status: 401 },
     )
+  }
+
+  const { hasRecentCheckIn, error: recentCheckInError } = await fetchRecentCheckIn(
+    supabase,
+    user.id,
+    placeId,
+  )
+  if (recentCheckInError) {
+    return NextResponse.json(
+      { error: recentCheckInError.message },
+      { status: 500 },
+    )
+  }
+
+  if (hasRecentCheckIn) {
+    return NextResponse.json({ error: RECENT_CHECK_IN_ERROR }, { status: 429 })
   }
 
   const { error: insertError } = await supabase.from('stamps').insert({

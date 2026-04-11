@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   EMPTY_PASSPORT_CHECK_IN_SUMMARY,
+  PASSPORT_CHECK_IN_COOLDOWN_MS,
+  getPassportCheckInCooldownCutoff,
   groupPassportVisits,
   summarizePassportVisits,
 } from '../../../lib/passport'
@@ -35,4 +37,13 @@ test('summarizePassportVisits returns the per-place visit summary for the panel'
   assert.equal(summary.visitsCount, 2)
   assert.equal(summary.firstVisitedAt, '2026-04-09T10:00:00.000Z')
   assert.equal(summary.latestVisitedAt, '2026-04-11T09:30:00.000Z')
+})
+
+test('getPassportCheckInCooldownCutoff returns a timestamp five minutes earlier', () => {
+  const now = Date.parse('2026-04-11T12:00:00.000Z')
+
+  assert.equal(
+    getPassportCheckInCooldownCutoff(now),
+    new Date(now - PASSPORT_CHECK_IN_COOLDOWN_MS).toISOString(),
+  )
 })

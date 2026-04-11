@@ -39,6 +39,12 @@ export const EMPTY_PASSPORT_CHECK_IN_SUMMARY: PassportCheckInSummary = {
   visits: [],
 }
 
+export const PASSPORT_CHECK_IN_COOLDOWN_MS = 5 * 60 * 1000
+
+export function getPassportCheckInCooldownCutoff(now = Date.now()): string {
+  return new Date(now - PASSPORT_CHECK_IN_COOLDOWN_MS).toISOString()
+}
+
 export function groupPassportVisits(
   rows: PassportVisitRow[],
 ): PassportStampAggregate[] {
