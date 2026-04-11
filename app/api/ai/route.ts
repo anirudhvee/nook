@@ -182,6 +182,14 @@ export async function POST(req: Request) {
 
   const reviews = await fetchGoogleReviews(placeId, googlePlacesKey)
   if (reviews == null) {
+    if (existingRow && needsSummaryBackfill) {
+      return NextResponse.json({
+        signals: existingRow.signals ?? [],
+        summary: null,
+        cached: false,
+      })
+    }
+
     return NextResponse.json({ error: 'Unable to load Google reviews' }, { status: 502 })
   }
 
