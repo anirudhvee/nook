@@ -284,3 +284,17 @@
 .banner-shake {
   animation: banner-shake 0.4s ease-in-out;
 }
+
+/* ── Passport ─────────────────────────────────────────────────────────────── */
+.passport-stamp-shell {
+  position: relative;
+  display: block;
+  will-change: transform;
+  transform-style: preserve-3d;
+  filter: drop-shadow(0 20px 36px rgba(71, 53, 36, 0.18));
+}
+
+.passport-stamp-perforated {
+  padding: 14px;
+  background: linear-gradient(165deg, #ffffff 0%, #f7f4ef 100%);
+}

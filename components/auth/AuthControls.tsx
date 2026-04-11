@@ -23,6 +23,9 @@ import {
   getUserDisplayName,
   getUserInitials,
 } from "@/lib/auth-profile";
+import { OPEN_AUTH_MODAL_EVENT } from "@/lib/auth-modal";
+import { getPassportUrl, isPassportPath } from "@/components/map/passportRoute";
+import { usePathname } from "next/navigation";
 import { createBrowserSupabaseClient } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
@@ -49,6 +52,7 @@ function getIdentityProviders(user: User | null, identities: UserIdentity[]) {
 
 export function AuthControls({ variant }: AuthControlsProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const [supabase] = useState(() => createBrowserSupabaseClient());
   const emailInputId = useId();
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -145,6 +149,23 @@ export function AuthControls({ variant }: AuthControlsProps) {
     };
   }, [isAuthModalOpen]);
 
+  useEffect(() => {
+    const handleOpenAuthModal = () => {
+      setIsDropdownOpen(false);
+      setEmail("");
+      setStatusMessage(null);
+      setIsGoogleLoading(false);
+      setIsMagicLinkLoading(false);
+      setIsAuthModalOpen(true);
+    };
+
+    window.addEventListener(OPEN_AUTH_MODAL_EVENT, handleOpenAuthModal);
+
+    return () => {
+      window.removeEventListener(OPEN_AUTH_MODAL_EVENT, handleOpenAuthModal);
+    };
+  }, []);
+
   const closeAuthModal = () => {
     setEmail("");
     setStatusMessage(null);
@@ -165,6 +186,15 @@ export function AuthControls({ variant }: AuthControlsProps) {
   const handlePassportClick = () => {
     if (!user) {
       openAuthModal();
+      return;
+    }
+
+    if (variant === "map") {
+      if (isPassportPath(pathname)) {
+        window.history.replaceState(null, "", "/");
+      } else {
+        window.history.pushState(null, "", getPassportUrl());
+      }
       return;
     }
 

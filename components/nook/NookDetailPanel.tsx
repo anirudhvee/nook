@@ -1,11 +1,30 @@
 'use client'
 
+import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js'
 import { useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
-import { ArrowLeft, Star, MapPin, Clock, BookmarkPlus, Wifi, Plug, Volume2, Laptop } from 'lucide-react'
+import {
+  ArrowLeft,
+  Star,
+  MapPin,
+  Clock,
+  CirclePlus,
+  History,
+  Wifi,
+  Plug,
+  Volume2,
+  Laptop,
+} from 'lucide-react'
+import {
+  EMPTY_PASSPORT_CHECK_IN_SUMMARY,
+  type PassportCheckInSummary,
+} from '@/lib/passport'
+import { dispatchOpenAuthModal } from '@/lib/auth-modal'
+import { createBrowserSupabaseClient } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
 import { buildPlacePhotoUrl } from '@/lib/place-photo'
 import { PlacePhotoAttribution } from '@/components/place/PlacePhotoAttribution'
+import { getPassportUrl } from '@/components/map/passportRoute'
 import { NOOK_TYPE_LABELS } from '@/types/nook'
 import type { NookPlace, NookPhoto } from '@/types/nook'
 
@@ -81,14 +100,63 @@ interface Props {
   onClose: () => void
 }
 
+function formatCheckInDate(date: string | null): string | null {
+  if (!date) return null
+
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(new Date(date))
+}
+
 export function NookDetailPanel({ nook, onClose }: Props) {
+  const [supabase] = useState(() => createBrowserSupabaseClient())
   const [detail, setDetail] = useState<PlaceDetail | null>(null)
   const [photo, setPhoto] = useState<NookPhoto | undefined>(nook.photo)
   const [fetching, setFetching] = useState(true)
   const [signals, setSignals] = useState<string[]>([])
   const [signalsLoading, setSignalsLoading] = useState(true)
   const [aiSummary, setAiSummary] = useState<string | null>(null)
+  const [user, setUser] = useState<User | null>(null)
+  const [checkInSummary, setCheckInSummary] = useState<PassportCheckInSummary>(
+    EMPTY_PASSPORT_CHECK_IN_SUMMARY,
+  )
+  const [checkInLoading, setCheckInLoading] = useState(true)
+  const [checkInSubmitting, setCheckInSubmitting] = useState(false)
+  const [checkInFeedback, setCheckInFeedback] = useState<string | null>(null)
   const photoPropRef = useRef(nook.photo)
+
+  useEffect(() => {
+    let isMounted = true
+
+    async function loadUser() {
+      const {
+        data: { user: authUser },
+      } = await supabase.auth.getUser()
+
+      if (isMounted) {
+        setUser(authUser ?? null)
+      }
+    }
+
+    void loadUser()
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((
+      _event: AuthChangeEvent,
+      session: Session | null,
+    ) => {
+      if (!isMounted) return
+      setUser(session?.user ?? null)
+    })
+
+    return () => {
+      isMounted = false
+      subscription.unsubscribe()
+    }
+  }, [supabase])
 
   useEffect(() => {
     photoPropRef.current = nook.photo
@@ -153,7 +221,6 @@ export function NookDetailPanel({ nook, onClose }: Props) {
           },
           body: JSON.stringify({
             place_id: nook.id,
-            reviews: aiReviews,
             generateSummary: needsAiSummary,
           }),
           signal: controller.signal,
@@ -185,6 +252,61 @@ export function NookDetailPanel({ nook, onClose }: Props) {
     }
   }, [nook.id])
 
+  useEffect(() => {
+    let cancelled = false
+    const controller = new AbortController()
+
+    if (!user) {
+      setCheckInSummary(EMPTY_PASSPORT_CHECK_IN_SUMMARY)
+      setCheckInLoading(false)
+      setCheckInFeedback(null)
+      return () => controller.abort()
+    }
+
+    async function loadCheckInSummary() {
+      setCheckInLoading(true)
+      setCheckInFeedback(null)
+      setCheckInSummary(EMPTY_PASSPORT_CHECK_IN_SUMMARY)
+
+      try {
+        const response = await fetch(
+          `/api/passport/check-ins?placeId=${encodeURIComponent(nook.id)}`,
+          {
+            signal: controller.signal,
+          },
+        )
+
+        if (!response.ok) {
+          if (!cancelled) {
+            setCheckInSummary(EMPTY_PASSPORT_CHECK_IN_SUMMARY)
+          }
+          return
+        }
+
+        const summary = (await response.json()) as PassportCheckInSummary
+        if (!cancelled) {
+          setCheckInSummary(summary)
+        }
+      } catch (error) {
+        if (isAbortError(error)) return
+        if (!cancelled) {
+          setCheckInSummary(EMPTY_PASSPORT_CHECK_IN_SUMMARY)
+        }
+      } finally {
+        if (!cancelled) {
+          setCheckInLoading(false)
+        }
+      }
+    }
+
+    void loadCheckInSummary()
+
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [nook.id, user])
+
   const rating = detail?.rating ?? nook.rating
   const openNow = detail?.regularOpeningHours?.openNow
   const hours = detail?.regularOpeningHours?.weekdayDescriptions
@@ -199,6 +321,56 @@ export function NookDetailPanel({ nook, onClose }: Props) {
     reviewSummary === aiSummary && aiSummary != null
       ? 'Summarized with AI'
       : detail?.reviewSummary?.disclosureText?.text ?? 'Summarized with Gemini'
+  const hasVisits = checkInSummary.visitsCount > 0
+  const firstVisitedLabel = formatCheckInDate(checkInSummary.firstVisitedAt)
+
+  async function handleCheckIn() {
+    if (!user) {
+      setCheckInFeedback(null)
+      dispatchOpenAuthModal()
+      return
+    }
+
+    setCheckInSubmitting(true)
+    setCheckInFeedback(null)
+
+    try {
+      const response = await fetch('/api/passport/check-ins', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          placeId: nook.id,
+        }),
+      })
+
+      const payload = (await response.json()) as PassportCheckInSummary & {
+        error?: string
+      }
+
+      if (!response.ok) {
+        setCheckInFeedback(payload.error ?? 'Unable to check in right now.')
+        return
+      }
+
+      setCheckInSummary(payload)
+      setCheckInFeedback(
+        payload.visitsCount > 1
+          ? 'Checked in again. Your Passport just got another visit.'
+          : 'Checked in. Added to your Passport.',
+      )
+    } catch {
+      setCheckInFeedback('Unable to check in right now.')
+    } finally {
+      setCheckInSubmitting(false)
+      setCheckInLoading(false)
+    }
+  }
+
+  function handleViewPreviousVisits() {
+    window.history.pushState(null, '', getPassportUrl(nook.id))
+  }
 
   return (
     <div className="flex h-full flex-col animate-in slide-in-from-left-4 duration-200">
@@ -325,13 +497,68 @@ export function NookDetailPanel({ nook, onClose }: Props) {
           </div>
         )}
 
-        <button
-          disabled
-          className="flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-primary/20 bg-primary/10 py-2.5 text-sm font-medium text-primary opacity-50"
-        >
-          <BookmarkPlus className="h-4 w-4" />
-          stamp my passport
-        </button>
+        <div className="rounded-2xl border border-primary/15 bg-primary/8 p-3">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-primary/80">
+              passport
+            </p>
+            <p className="mt-1 text-sm font-medium text-foreground">
+              {checkInLoading
+                ? 'checking your visit history...'
+                : hasVisits
+                  ? `${checkInSummary.visitsCount} visit${checkInSummary.visitsCount === 1 ? '' : 's'} logged`
+                  : 'no check-ins yet'}
+            </p>
+            {hasVisits && firstVisitedLabel ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                First visit {firstVisitedLabel}
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Check in when you start working from this nook.
+              </p>
+            )}
+          </div>
+
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            {hasVisits ? (
+              <>
+                <button
+                  onClick={handleViewPreviousVisits}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-border/70 bg-background px-3 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted sm:flex-1"
+                >
+                  <History className="h-4 w-4" />
+                  view previous visits
+                </button>
+                <button
+                  onClick={handleCheckIn}
+                  disabled={checkInSubmitting}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-primary/20 bg-primary py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-60 sm:flex-1"
+                >
+                  <CirclePlus className="h-4 w-4" />
+                  {checkInSubmitting ? 'checking in...' : 'check in again'}
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={handleCheckIn}
+                disabled={checkInSubmitting}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-primary/20 bg-primary py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-60"
+              >
+                <CirclePlus className="h-4 w-4" />
+                {checkInSubmitting
+                  ? 'checking in...'
+                  : user
+                    ? 'check in to nook'
+                    : 'sign in to check in'}
+              </button>
+            )}
+          </div>
+
+          {checkInFeedback ? (
+            <p className="mt-2 text-xs text-muted-foreground">{checkInFeedback}</p>
+          ) : null}
+        </div>
       </div>
     </div>
   )

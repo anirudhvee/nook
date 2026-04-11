@@ -34,6 +34,8 @@ import {
   getCircleBounds,
 } from '@/components/map/radiusUtils'
 import { getNookUrl, getSelectedNookIdFromUrl } from '@/components/map/nookRoute'
+import { isPassportPath } from '@/components/map/passportRoute'
+import { PassportOverlay, type PassportPin } from '@/components/passport/PassportOverlay'
 import { buildPlacePhotoUrl } from '@/lib/place-photo'
 
 const SRC = 'nooks'
@@ -48,6 +50,7 @@ const RADIUS_COLOR = '#4a7c3f'
 
 const COLOR_NORMAL = 'oklch(0.42 0.09 145)'
 const COLOR_SELECTED = '#c4623a'
+const COLOR_PASSPORT = '#c4623a'
 
 const SIDEBAR_BOTTOM_PX = 16
 const MAPBOX_LOGO_SAFE_AREA_PX = 16
@@ -322,6 +325,7 @@ function PlacesPanel({
 
 export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number] }) {
   const pathname = usePathname()
+  const isPassportOpen = isPassportPath(pathname)
   const urlSelectedNookId = getSelectedNookIdFromUrl(pathname)
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<mapboxgl.Map | null>(null)
@@ -332,6 +336,10 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
   const selectedSearchLocationRef = useRef<SearchLocation | null>(null)
   const nooksRef = useRef<NookPlace[]>([])
   const pointMarkersRef = useRef<Map<string, mapboxgl.Marker>>(new Map())
+  const passportMarkersRef = useRef<mapboxgl.Marker[]>([])
+  const passportRotationRef = useRef<number | null>(null)
+  const passportOpenRef = useRef(false)
+  const passportCloseHandledRef = useRef(false)
   const selectedIdRef = useRef<string | null>(null)
   const detailNookRef = useRef<NookPlace | null>(null)
   const requestedNookIdRef = useRef<string | null>(null)
@@ -345,6 +353,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
   const geolocateIsAutoTriggerRef = useRef(false)
   const geoBtnPatchedRef = useRef(false)
   const bannerDismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  passportOpenRef.current = isPassportOpen
 
   const [nearbyNooks, setNearbyNooks] = useState<NookPlace[]>([])
   const [searchedNooks, setSearchedNooks] = useState<NookPlace[]>([])
@@ -430,7 +439,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
   const clearSelectedNook = useCallback(() => {
     requestedNookIdRef.current = null
     clearSelectedNookState()
-    window.history.pushState(null, '', '/')
+    window.history.replaceState(null, '', '/')
   }, [clearSelectedNookState])
 
   const invalidateSearchedResults = useCallback(() => {
@@ -600,8 +609,132 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     clearSelectedNook()
   }, [clearSelectedNook])
 
+  const hideNearbyMarkers = useCallback(() => {
+    pointMarkersRef.current.forEach(marker => {
+      marker.getElement().style.display = 'none'
+    })
+    const map = mapRef.current
+    if (map?.getLayer(L_CLUSTERS)) map.setLayoutProperty(L_CLUSTERS, 'visibility', 'none')
+    if (map?.getLayer(L_CLUSTER_COUNT)) map.setLayoutProperty(L_CLUSTER_COUNT, 'visibility', 'none')
+    if (map?.getLayer(RADIUS_CIRCLE_FILL)) map.setLayoutProperty(RADIUS_CIRCLE_FILL, 'visibility', 'none')
+    if (map?.getLayer(RADIUS_CIRCLE_LINE)) map.setLayoutProperty(RADIUS_CIRCLE_LINE, 'visibility', 'none')
+  }, [])
+
+  const showNearbyMarkers = useCallback(() => {
+    pointMarkersRef.current.forEach(marker => {
+      marker.getElement().style.display = ''
+    })
+    const map = mapRef.current
+    if (map?.getLayer(L_CLUSTERS)) map.setLayoutProperty(L_CLUSTERS, 'visibility', 'visible')
+    if (map?.getLayer(L_CLUSTER_COUNT)) map.setLayoutProperty(L_CLUSTER_COUNT, 'visibility', 'visible')
+    if (map?.getLayer(RADIUS_CIRCLE_FILL)) map.setLayoutProperty(RADIUS_CIRCLE_FILL, 'visibility', 'visible')
+    if (map?.getLayer(RADIUS_CIRCLE_LINE)) map.setLayoutProperty(RADIUS_CIRCLE_LINE, 'visibility', 'visible')
+  }, [])
+
+  const clearPassportMarkers = useCallback(() => {
+    for (const m of passportMarkersRef.current) m.remove()
+    passportMarkersRef.current = []
+  }, [])
+
+  const stopPassportRotation = useCallback(() => {
+    if (passportRotationRef.current != null) {
+      cancelAnimationFrame(passportRotationRef.current)
+      passportRotationRef.current = null
+    }
+  }, [])
+
+  const handlePassportStampsLoaded = useCallback((pins: PassportPin[]) => {
+    const map = mapRef.current
+    if (!map) return
+
+    hideNearbyMarkers()
+    clearPassportMarkers()
+    stopPassportRotation()
+
+    if (pins.length === 0) return
+
+    for (const pin of pins) {
+      const marker = new mapboxgl.Marker({ color: COLOR_PASSPORT })
+        .setLngLat([pin.lng, pin.lat])
+        .addTo(map)
+      marker.getElement().style.cursor = 'pointer'
+      passportMarkersRef.current.push(marker)
+    }
+
+    const bounds = new mapboxgl.LngLatBounds()
+    for (const pin of pins) bounds.extend([pin.lng, pin.lat])
+
+    const pad = { top: 80, bottom: 80, left: 340, right: Math.round(window.innerWidth * 0.5) + 40 }
+    const naturalCam = map.cameraForBounds(bounds, { padding: { top: 80, bottom: 80, left: 80, right: 80 } })
+
+    if (naturalCam && (naturalCam.zoom ?? 0) >= 1.8) {
+      map.fitBounds(bounds, { padding: pad, maxZoom: 13, duration: 1000 })
+      return
+    }
+
+    const sortedPins = [...pins].sort((a, b) => a.lng - b.lng)
+    const avgLat = pins.reduce((s, p) => s + p.lat, 0) / pins.length
+    const GLOBE_ZOOM = 1.8
+    const DEG_PER_SEC = 18
+
+    const rightPad = Math.round(window.innerWidth * 0.5)
+    const globePadding = { top: 0, bottom: 0, left: 0, right: rightPad }
+
+    map.easeTo({
+      center: [sortedPins[0].lng, avgLat],
+      zoom: GLOBE_ZOOM,
+      padding: globePadding,
+      duration: 1200,
+    })
+
+    let idx = 0
+    let lastTime: number | null = null
+    let currentLng = sortedPins[0].lng
+
+    function rotate(timestamp: number) {
+      if (!mapRef.current) return
+
+      if (lastTime == null) { lastTime = timestamp }
+      const dt = (timestamp - lastTime) / 1000
+      lastTime = timestamp
+
+      const targetLng = sortedPins[idx].lng
+      const eastward = ((targetLng - currentLng) % 360 + 360) % 360
+
+      if (eastward < 1) {
+        idx = (idx + 1) % sortedPins.length
+      }
+
+      const step = DEG_PER_SEC * dt
+      currentLng += Math.min(step, eastward || step)
+
+      mapRef.current.setCenter([currentLng, avgLat])
+
+      passportRotationRef.current = requestAnimationFrame(rotate)
+    }
+
+    map.once('moveend', () => {
+      passportRotationRef.current = requestAnimationFrame(rotate)
+    })
+  }, [clearPassportMarkers, hideNearbyMarkers, stopPassportRotation])
+
+  const handlePassportClose = useCallback(() => {
+    window.history.replaceState(null, '', '/')
+  }, [])
+
   const handleLocationSelect = useCallback((lng: number, lat: number, name: string) => {
-    clearSelectedNook()
+    const wasPassport = passportOpenRef.current
+    if (wasPassport) {
+      stopPassportRotation()
+      clearPassportMarkers()
+      showNearbyMarkers()
+      passportCloseHandledRef.current = true
+      requestedNookIdRef.current = null
+      clearSelectedNookState()
+      window.history.replaceState(null, '', '/')
+    } else {
+      clearSelectedNook()
+    }
     mapSyncModeRef.current = 'search'
 
     const location = { lng, lat, name }
@@ -609,13 +742,20 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     setSelectedSearchLocation(location)
     setIsSearchOpen(true)
 
+    const zeroPad = { top: 0, bottom: 0, left: 0, right: 0 }
     if (isRadiusActive) {
+      if (wasPassport) mapRef.current?.setPadding(zeroPad)
       fitToCircle([lng, lat], radiusMRef.current)
     } else {
-      mapRef.current?.flyTo({ center: [lng, lat], zoom: 14, duration: 1000 })
+      mapRef.current?.flyTo({
+        center: [lng, lat],
+        zoom: 14,
+        duration: 1000,
+        ...(wasPassport ? { padding: zeroPad } : {}),
+      })
     }
     void loadSearchedPlaces(location, filter, { mapTarget: 'search', updateMap: true })
-  }, [clearSelectedNook, filter, fitToCircle, isRadiusActive, loadSearchedPlaces])
+  }, [clearPassportMarkers, clearSelectedNook, clearSelectedNookState, filter, fitToCircle, isRadiusActive, loadSearchedPlaces, showNearbyMarkers, stopPassportRotation])
 
   const fetchNookById = useCallback(async (id: string): Promise<NookPlace | null> => {
     try {
@@ -637,9 +777,9 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
 
       const neighborhood = raw.addressComponents?.find(
         c =>
-          c.types.includes('neighborhood') ||
-          c.types.includes('sublocality_level_1') ||
-          c.types.includes('sublocality')
+          c.types?.includes('neighborhood') ||
+          c.types?.includes('sublocality_level_1') ||
+          c.types?.includes('sublocality')
       )?.longText
 
       const nook: NookPlace = {
@@ -696,6 +836,50 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
       }
     })
   }, [applySelectedNook, clearSelectedNookState, fetchNookById])
+
+  const prevPassportOpenRef = useRef(false)
+  useEffect(() => {
+    const wasOpen = prevPassportOpenRef.current
+    prevPassportOpenRef.current = isPassportOpen
+
+    if (wasOpen && !isPassportOpen) {
+      if (passportCloseHandledRef.current) {
+        passportCloseHandledRef.current = false
+        return
+      }
+
+      stopPassportRotation()
+      clearPassportMarkers()
+      showNearbyMarkers()
+
+      const zeroPad = { top: 0, bottom: 0, left: 0, right: 0 }
+      const searchLoc = selectedSearchLocationRef.current
+      if (mapSyncModeRef.current === 'search' && searchLoc) {
+        if (isRadiusActive) {
+          fitToCircle([searchLoc.lng, searchLoc.lat], radiusMRef.current)
+        } else {
+          mapRef.current?.flyTo({
+            center: [searchLoc.lng, searchLoc.lat],
+            zoom: 14,
+            duration: 1000,
+            padding: zeroPad,
+          })
+        }
+      } else {
+        const target = realUserLocRef.current ?? nearbyOriginRef.current ?? initialCenterRef.current
+        if (isRadiusActive) {
+          fitToCircle(target, radiusMRef.current)
+        } else {
+          mapRef.current?.flyTo({
+            center: target,
+            zoom: 14,
+            duration: 1000,
+            padding: zeroPad,
+          })
+        }
+      }
+    }
+  }, [isPassportOpen, stopPassportRotation, clearPassportMarkers, showNearbyMarkers, fitToCircle, isRadiusActive])
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return
@@ -873,6 +1057,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
       }, L_CLUSTERS)
 
       const syncPointMarkers = () => {
+        if (passportOpenRef.current) return
         const features = map.querySourceFeatures(SRC, {
           filter: ['!', ['has', 'point_count']],
         })
@@ -1055,7 +1240,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
 
   const searchBiasLocation = realUserLoc ?? nearbyOrigin
   const leftStackBottomPx = SIDEBAR_BOTTOM_PX + MAPBOX_LOGO_SAFE_AREA_PX
-  const nearbyPanelHeight = isSearchOpen
+  const nearbyPanelHeight = (isSearchOpen || isPassportOpen)
     ? `${PEEK_STRIP_HEIGHT_PX}px`
     : `calc(100vh - 72px - ${leftStackBottomPx}px)`
   const searchPanelBottom = isSearchOpen
@@ -1109,7 +1294,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
         ))}
       </div>
 
-      <div className="absolute top-4 right-4 z-10">
+      <div className="absolute top-4 right-4 z-30">
         <AuthControls variant="map" />
       </div>
 
@@ -1121,9 +1306,9 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
           transition: 'height 350ms cubic-bezier(0.4, 0, 0.2, 1)',
         }}
       >
-        {isSearchOpen ? (
+        {(isSearchOpen || isPassportOpen) ? (
           <button
-            onClick={restoreNearbyView}
+            onClick={isPassportOpen ? handlePassportClose : restoreNearbyView}
             className="w-full h-[72px] px-4 py-3 text-left shrink-0 hover:bg-muted/40 transition-colors flex items-center justify-between gap-3"
           >
             <div className="min-w-0 space-y-1">
@@ -1199,7 +1384,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
         </div>
       )}
 
-      {(detailNook || showSearchResultsPanel) && (
+      {!isPassportOpen && (detailNook || showSearchResultsPanel) && (
         <div
           className="absolute top-[72px] left-4 z-20 w-[300px] flex flex-col rounded-2xl bg-background/95 backdrop-blur-sm shadow-lg border border-border overflow-hidden"
           style={{ bottom: searchPanelBottom }}
@@ -1222,6 +1407,23 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
               onSelectNook={handleSelectNook}
             />
           ) : null}
+        </div>
+      )}
+
+      {isPassportOpen && (
+        <div
+          className="absolute right-4 top-[72px] z-20 flex flex-col rounded-2xl bg-background/95 backdrop-blur-sm shadow-lg border border-border overflow-hidden"
+          style={{
+            bottom: `${leftStackBottomPx}px`,
+            width: 'calc(50vw - 2rem)',
+            minWidth: '320px',
+            maxWidth: '640px',
+          }}
+        >
+          <PassportOverlay
+            onClose={handlePassportClose}
+            onStampsLoaded={handlePassportStampsLoaded}
+          />
         </div>
       )}
     </div>
