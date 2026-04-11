@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
-import { createServiceClient } from '@/lib/supabase'
+import { createAdminSupabaseClient } from '@/lib/supabase-admin'
+
+const PLACES_DETAIL_URL = 'https://places.googleapis.com/v1/places'
 
 const ALLOWED_SIGNALS = [
   'good wifi',
@@ -20,6 +22,14 @@ type AllowedSignal = (typeof ALLOWED_SIGNALS)[number]
 interface ReviewInput {
   text: string
   rating?: number | null
+}
+
+interface GooglePlaceReviewsResponse {
+  reviews?: Array<{
+    rating?: number
+    text?: { text?: string | null }
+    originalText?: { text?: string | null }
+  }>
 }
 
 interface OpenAIChatResponse {
@@ -44,27 +54,36 @@ function isValidSignalArray(value: unknown): value is { signals: AllowedSignal[]
   )
 }
 
-function normalizeReviews(reviews: unknown): ReviewInput[] {
-  if (!Array.isArray(reviews)) return []
+async function fetchGoogleReviews(
+  placeId: string,
+  apiKey: string,
+): Promise<ReviewInput[] | null> {
+  const response = await fetch(`${PLACES_DETAIL_URL}/${encodeURIComponent(placeId)}`, {
+    headers: {
+      'X-Goog-Api-Key': apiKey,
+      'X-Goog-FieldMask': ['reviews.rating', 'reviews.text', 'reviews.originalText'].join(','),
+    },
+    next: { revalidate: 3600 },
+  })
+
+  if (!response.ok) {
+    return null
+  }
+
+  const payload = (await response.json()) as GooglePlaceReviewsResponse
+  const reviews = payload.reviews ?? []
 
   return reviews.flatMap(review => {
-    if (!review || typeof review !== 'object') return []
-
-    const candidate = review as Record<string, unknown>
-    const textValue = typeof candidate.text === 'string' ? candidate.text.trim() : ''
+    const textValue = review.text?.text?.trim() || review.originalText?.text?.trim() || ''
     if (!textValue) return []
 
-    const ratingValue =
-      typeof candidate.rating === 'number'
-        ? candidate.rating
-        : typeof candidate.rating === 'string'
-          ? Number.parseFloat(candidate.rating)
-          : null
-
+    const ratingValue = review.rating
     return [
       {
         text: textValue,
-        rating: Number.isFinite(ratingValue) ? ratingValue : null,
+        rating: typeof ratingValue === 'number' && Number.isFinite(ratingValue)
+          ? ratingValue
+          : null,
       },
     ]
   })
@@ -122,9 +141,8 @@ export async function POST(req: Request) {
   }
 
   const generateSummary = body?.generateSummary === true
-  const reviews = normalizeReviews(body?.reviews)
 
-  const supabase = await createServiceClient()
+  const supabase = createAdminSupabaseClient()
   const { data: existingRow, error: existingRowError } = await supabase
     .from('work_signals')
     .select('nook_id, signals, summary, parsed_at')
@@ -157,6 +175,23 @@ export async function POST(req: Request) {
   // Full re-parse or summary backfill: cache miss, TTL expired, empty signals retry,
   // or a pre-summary row that now needs an OpenAI summary.
   const parsedAt = new Date(now).toISOString()
+  const googlePlacesKey = process.env.GOOGLE_PLACES_API_KEY
+  if (!googlePlacesKey) {
+    return NextResponse.json({ error: 'Google Places API key not configured' }, { status: 500 })
+  }
+
+  const reviews = await fetchGoogleReviews(placeId, googlePlacesKey)
+  if (reviews == null) {
+    return NextResponse.json({ error: 'Unable to load Google reviews' }, { status: 502 })
+  }
+
+  if (existingRow && needsSummaryBackfill && reviews.length === 0) {
+    return NextResponse.json({
+      signals: existingRow.signals ?? [],
+      summary: null,
+      cached: false,
+    })
+  }
 
   if (reviews.length === 0) {
     const { data: storedRow, error: storeError } = await supabase

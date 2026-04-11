@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getGoogleIdentityProfile } from "@/lib/auth-profile";
-import { createServerSupabaseClient } from "@/lib/supabase";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
