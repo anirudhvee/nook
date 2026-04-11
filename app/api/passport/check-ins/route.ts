@@ -16,8 +16,11 @@ async function getAuthenticatedContext() {
   return { supabase, user, error }
 }
 
-async function fetchVisitRows(userId: string, placeId: string) {
-  const { supabase } = await getAuthenticatedContext()
+async function fetchVisitRows(
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  userId: string,
+  placeId: string,
+) {
   const { data, error } = await supabase
     .from('stamps')
     .select('id, nook_id, stamped_at')
@@ -37,7 +40,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Missing placeId' }, { status: 400 })
   }
 
-  const { user, error } = await getAuthenticatedContext()
+  const { supabase, user, error } = await getAuthenticatedContext()
   if (error || !user) {
     return NextResponse.json(
       { error: 'You must be signed in to view Passport visits.' },
@@ -45,7 +48,11 @@ export async function GET(request: NextRequest) {
     )
   }
 
-  const { data, error: visitError } = await fetchVisitRows(user.id, placeId)
+  const { data, error: visitError } = await fetchVisitRows(
+    supabase,
+    user.id,
+    placeId,
+  )
   if (visitError) {
     return NextResponse.json({ error: visitError.message }, { status: 500 })
   }
@@ -89,7 +96,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: insertError.message }, { status: 500 })
   }
 
-  const { data, error: visitError } = await fetchVisitRows(user.id, placeId)
+  const { data, error: visitError } = await fetchVisitRows(
+    supabase,
+    user.id,
+    placeId,
+  )
   if (visitError) {
     return NextResponse.json({ error: visitError.message }, { status: 500 })
   }

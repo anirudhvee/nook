@@ -7,6 +7,25 @@ import {
 } from '@/lib/passport'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 
+async function fetchInBatches<T>(
+  ids: string[],
+  batchSize: number,
+  fn: (id: string) => Promise<T>,
+): Promise<Array<readonly [string, T]>> {
+  const results: Array<readonly [string, T]> = []
+
+  for (let index = 0; index < ids.length; index += batchSize) {
+    const batch = ids.slice(index, index + batchSize)
+    const batchResults = await Promise.all(
+      batch.map(async id => [id, await fn(id)] as const),
+    )
+
+    results.push(...batchResults)
+  }
+
+  return results
+}
+
 export async function GET() {
   const supabase = await createServerSupabaseClient()
   const {
@@ -34,10 +53,10 @@ export async function GET() {
   const visitRows = (data ?? []) as PassportVisitRow[]
   const groupedStamps = groupPassportVisits(visitRows)
 
-  const stampPreviewEntries = await Promise.all(
-    groupedStamps.map(async stamp => {
-      return [stamp.nookId, await fetchGooglePlacePreview(stamp.nookId)] as const
-    }),
+  const stampPreviewEntries = await fetchInBatches(
+    groupedStamps.map(stamp => stamp.nookId),
+    5,
+    fetchGooglePlacePreview,
   )
 
   const previewMap = new Map(stampPreviewEntries)

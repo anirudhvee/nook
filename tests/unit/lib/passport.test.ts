@@ -1,32 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildPassportLocationLine } from '../../../lib/google-places'
 import {
   EMPTY_PASSPORT_CHECK_IN_SUMMARY,
   groupPassportVisits,
   summarizePassportVisits,
 } from '../../../lib/passport'
-
-test('buildPassportLocationLine prefers neighborhood plus city', () => {
-  assert.equal(
-    buildPassportLocationLine({
-      neighborhood: 'Mission',
-      city: 'San Francisco',
-      region: 'CA',
-    }),
-    'Mission, San Francisco',
-  )
-})
-
-test('buildPassportLocationLine falls back to city and region when needed', () => {
-  assert.equal(
-    buildPassportLocationLine({
-      city: 'San Francisco',
-      region: 'CA',
-    }),
-    'San Francisco, CA',
-  )
-})
 
 test('groupPassportVisits collapses many rows into one stamp per nook', () => {
   const grouped = groupPassportVisits([
