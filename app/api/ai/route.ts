@@ -241,6 +241,10 @@ export async function POST(req: Request) {
 
   const openAiKey = process.env.OPENAI_API_KEY
   if (!openAiKey) {
+    if (existingRow && needsSummaryBackfill) {
+      return buildCachedSignalsResponse(existingRow, { summary: null })
+    }
+
     return NextResponse.json({ error: 'OpenAI API key not configured' }, { status: 500 })
   }
 
