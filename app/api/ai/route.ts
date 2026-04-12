@@ -195,8 +195,10 @@ export async function POST(req: Request) {
   const parsedAt = new Date(now).toISOString()
   const googlePlacesKey = process.env.GOOGLE_PLACES_API_KEY
   if (!googlePlacesKey) {
-    if (existingRow && needsSummaryBackfill) {
-      return buildCachedSignalsResponse(existingRow, { summary: null })
+    if (existingRow) {
+      return buildCachedSignalsResponse(existingRow, {
+        summary: needsSummaryBackfill ? null : existingRow.summary,
+      })
     }
 
     return NextResponse.json({ error: 'Google Places API key not configured' }, { status: 500 })
