@@ -1,4 +1,5 @@
-// TODO: GET — list/search nooks; POST — submit a new nook (auth required).
+// Deprecated placeholder on main.
+// Venue discovery is sourced from Google Places nearby search rather than user-submitted nooks.
 export async function GET() {
   return Response.json({ message: "Nooks API — not yet implemented" }, { status: 501 });
 }

@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
-import { createServiceClient } from '@/lib/supabase'
+import { createAdminSupabaseClient } from '@/lib/supabase-admin'
+
+const PLACES_DETAIL_URL = 'https://places.googleapis.com/v1/places'
 
 const ALLOWED_SIGNALS = [
   'good wifi',
@@ -22,12 +24,27 @@ interface ReviewInput {
   rating?: number | null
 }
 
+interface GooglePlaceReviewsResponse {
+  reviews?: Array<{
+    rating?: number
+    text?: { text?: string | null }
+    originalText?: { text?: string | null }
+  }>
+}
+
 interface OpenAIChatResponse {
   choices?: Array<{
     message?: {
       content?: string | null
     }
   }>
+}
+
+interface ExistingWorkSignalsRow {
+  nook_id: string
+  signals: AllowedSignal[] | null
+  summary: string | null
+  parsed_at: string
 }
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
@@ -44,29 +61,58 @@ function isValidSignalArray(value: unknown): value is { signals: AllowedSignal[]
   )
 }
 
-function normalizeReviews(reviews: unknown): ReviewInput[] {
-  if (!Array.isArray(reviews)) return []
-
-  return reviews.flatMap(review => {
-    if (!review || typeof review !== 'object') return []
-
-    const candidate = review as Record<string, unknown>
-    const textValue = typeof candidate.text === 'string' ? candidate.text.trim() : ''
-    if (!textValue) return []
-
-    const ratingValue =
-      typeof candidate.rating === 'number'
-        ? candidate.rating
-        : typeof candidate.rating === 'string'
-          ? Number.parseFloat(candidate.rating)
-          : null
-
-    return [
-      {
-        text: textValue,
-        rating: Number.isFinite(ratingValue) ? ratingValue : null,
+async function fetchGoogleReviews(
+  placeId: string,
+  apiKey: string,
+): Promise<ReviewInput[] | null> {
+  try {
+    const response = await fetch(`${PLACES_DETAIL_URL}/${encodeURIComponent(placeId)}`, {
+      headers: {
+        'X-Goog-Api-Key': apiKey,
+        'X-Goog-FieldMask': ['reviews.rating', 'reviews.text', 'reviews.originalText'].join(','),
       },
-    ]
+      next: { revalidate: 3600 },
+    })
+
+    if (!response.ok) {
+      return null
+    }
+
+    const payload = (await response.json()) as GooglePlaceReviewsResponse
+    const reviews = payload.reviews ?? []
+
+    return reviews.flatMap(review => {
+      const textValue = review.text?.text?.trim() || review.originalText?.text?.trim() || ''
+      if (!textValue) return []
+
+      const ratingValue = review.rating
+      return [
+        {
+          text: textValue,
+          rating: typeof ratingValue === 'number' && Number.isFinite(ratingValue)
+            ? ratingValue
+            : null,
+        },
+      ]
+    })
+  } catch {
+    return null
+  }
+}
+
+function buildCachedSignalsResponse(
+  row: ExistingWorkSignalsRow,
+  options?: { summary?: string | null; cached?: boolean },
+) {
+  const summary =
+    options && 'summary' in options
+      ? options.summary ?? null
+      : row.summary ?? null
+
+  return NextResponse.json({
+    signals: row.signals ?? [],
+    summary,
+    cached: options?.cached ?? true,
   })
 }
 
@@ -108,10 +154,10 @@ async function generateWorkSummary(reviews: ReviewInput[], openAiKey: string): P
 }
 
 export async function POST(req: Request) {
-  let body: { place_id?: string; reviews?: unknown; generateSummary?: boolean } | null = null
+  let body: { place_id?: string; generateSummary?: boolean } | null = null
 
   try {
-    body = (await req.json()) as { place_id?: string; reviews?: unknown; generateSummary?: boolean }
+    body = (await req.json()) as { place_id?: string; generateSummary?: boolean }
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
@@ -122,14 +168,13 @@ export async function POST(req: Request) {
   }
 
   const generateSummary = body?.generateSummary === true
-  const reviews = normalizeReviews(body?.reviews)
 
-  const supabase = await createServiceClient()
+  const supabase = createAdminSupabaseClient()
   const { data: existingRow, error: existingRowError } = await supabase
     .from('work_signals')
     .select('nook_id, signals, summary, parsed_at')
     .eq('nook_id', placeId)
-    .maybeSingle()
+    .maybeSingle<ExistingWorkSignalsRow>()
 
   if (existingRowError) {
     return NextResponse.json({ error: existingRowError.message }, { status: 500 })
@@ -145,11 +190,7 @@ export async function POST(req: Request) {
     needsSummaryBackfill = !ttlExpired && generateSummary && existingRow.summary == null
 
     if (!ttlExpired && !emptySignalsRetry && !needsSummaryBackfill) {
-      return NextResponse.json({
-        signals: existingRow.signals ?? [],
-        summary: existingRow.summary ?? null,
-        cached: true,
-      })
+      return buildCachedSignalsResponse(existingRow)
     }
     // fall through to re-parse or backfill
   }
@@ -157,6 +198,31 @@ export async function POST(req: Request) {
   // Full re-parse or summary backfill: cache miss, TTL expired, empty signals retry,
   // or a pre-summary row that now needs an OpenAI summary.
   const parsedAt = new Date(now).toISOString()
+  const googlePlacesKey = process.env.GOOGLE_PLACES_API_KEY
+  if (!googlePlacesKey) {
+    if (existingRow) {
+      return buildCachedSignalsResponse(existingRow, {
+        summary: needsSummaryBackfill ? null : existingRow.summary,
+      })
+    }
+
+    return NextResponse.json({ error: 'Google Places API key not configured' }, { status: 500 })
+  }
+
+  const reviews = await fetchGoogleReviews(placeId, googlePlacesKey)
+  if (reviews == null) {
+    if (existingRow) {
+      return buildCachedSignalsResponse(existingRow, {
+        summary: needsSummaryBackfill ? null : existingRow.summary,
+      })
+    }
+
+    return NextResponse.json({ error: 'Unable to load Google reviews' }, { status: 502 })
+  }
+
+  if (existingRow && needsSummaryBackfill && reviews.length === 0) {
+    return buildCachedSignalsResponse(existingRow, { summary: null })
+  }
 
   if (reviews.length === 0) {
     const { data: storedRow, error: storeError } = await supabase
@@ -182,6 +248,10 @@ export async function POST(req: Request) {
 
   const openAiKey = process.env.OPENAI_API_KEY
   if (!openAiKey) {
+    if (existingRow && needsSummaryBackfill) {
+      return buildCachedSignalsResponse(existingRow, { summary: null })
+    }
+
     return NextResponse.json({ error: 'OpenAI API key not configured' }, { status: 500 })
   }
 
