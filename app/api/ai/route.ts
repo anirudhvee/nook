@@ -104,9 +104,14 @@ function buildCachedSignalsResponse(
   row: ExistingWorkSignalsRow,
   options?: { summary?: string | null; cached?: boolean },
 ) {
+  const summary =
+    options && 'summary' in options
+      ? options.summary ?? null
+      : row.summary ?? null
+
   return NextResponse.json({
     signals: row.signals ?? [],
-    summary: options?.summary ?? row.summary ?? null,
+    summary,
     cached: options?.cached ?? true,
   })
 }

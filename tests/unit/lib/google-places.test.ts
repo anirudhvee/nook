@@ -5,7 +5,7 @@ import {
   extractCity,
   extractNeighborhood,
   extractRegion,
-} from '../../../lib/google-places'
+} from '../../../lib/google-places-address'
 
 test('buildPassportLocationLine prefers neighborhood plus city', () => {
   assert.equal(

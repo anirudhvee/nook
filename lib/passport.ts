@@ -28,7 +28,6 @@ export interface PassportCheckInSummary {
   firstVisitedAt: string | null
   latestVisitedAt: string | null
   visitsCount: number
-  visits: PassportVisit[]
 }
 
 export const EMPTY_PASSPORT_CHECK_IN_SUMMARY: PassportCheckInSummary = {
@@ -36,7 +35,6 @@ export const EMPTY_PASSPORT_CHECK_IN_SUMMARY: PassportCheckInSummary = {
   firstVisitedAt: null,
   latestVisitedAt: null,
   visitsCount: 0,
-  visits: [],
 }
 
 export const PASSPORT_CHECK_IN_COOLDOWN_MS = 5 * 60 * 1000
@@ -95,6 +93,5 @@ export function summarizePassportVisits(
     firstVisitedAt: stamp.firstVisitedAt,
     latestVisitedAt: stamp.latestVisitedAt,
     visitsCount: stamp.visitsCount,
-    visits: stamp.visits,
   }
 }
