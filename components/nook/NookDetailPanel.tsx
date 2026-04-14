@@ -374,38 +374,38 @@ export function NookDetailPanel({ nook, onClose }: Props) {
 
   return (
     <div className="flex h-full flex-col animate-in slide-in-from-left-4 duration-200">
-      <div className="shrink-0 border-b border-border px-4 pt-4 pb-3">
-        <button
-          onClick={onClose}
-          className="mb-3 flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          back to list
-        </button>
+      <div className="shrink-0 border-b border-border px-4 pt-2 pb-3">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onClose}
+            className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
+            aria-label="Back to list"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
 
-        {fetching ? (
-          <div className="space-y-2">
+          {fetching ? (
             <div className="h-5 w-3/4 animate-pulse rounded bg-muted" />
-            <div className="h-3.5 w-1/2 animate-pulse rounded bg-muted" />
-          </div>
-        ) : (
-          <>
-            <h2 className="text-base font-semibold leading-snug">{nook.name}</h2>
-            <div className="mt-1.5 flex flex-wrap items-center gap-2">
-              <span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                {NOOK_TYPE_LABELS[nook.type]}
+          ) : (
+            <h2 className="text-base font-semibold leading-snug truncate">{nook.name}</h2>
+          )}
+        </div>
+
+        {!fetching && (
+          <div className="mt-1.5 ml-6 flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+              {NOOK_TYPE_LABELS[nook.type]}
+            </span>
+            {nook.neighborhood && (
+              <span className="text-xs text-muted-foreground">{nook.neighborhood}</span>
+            )}
+            {rating != null && (
+              <span className="flex items-center gap-0.5 text-xs text-muted-foreground">
+                <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                {rating.toFixed(1)}
               </span>
-              {nook.neighborhood && (
-                <span className="text-xs text-muted-foreground">{nook.neighborhood}</span>
-              )}
-              {rating != null && (
-                <span className="flex items-center gap-0.5 text-xs text-muted-foreground">
-                  <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
-                  {rating.toFixed(1)}
-                </span>
-              )}
-            </div>
-          </>
+            )}
+          </div>
         )}
       </div>
 

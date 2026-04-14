@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState, useCallback, useEffect, useId, useMemo } from 'react'
-import { Search, X } from 'lucide-react'
+import { Search, X, ArrowLeft } from 'lucide-react'
 import { SearchBoxCore } from '@mapbox/search-js-core'
 import type { SearchBoxSuggestion } from '@mapbox/search-js-core'
 import { LogoWordmark } from '@/components/LogoWordmark'
@@ -35,9 +35,11 @@ type Props = {
   onQueryChange: (query: string) => void
   onLocationSelect: (lng: number, lat: number, name: string) => void
   userLocation: [number, number] | null
+  fullWidth?: boolean
 }
 
 export function SearchPill({
+  fullWidth = false,
   isOpen,
   query,
   selectedLocation,
@@ -190,7 +192,7 @@ export function SearchPill({
       setHighlightedSuggestionId(null)
       onLocationSelect(lng, lat, suggestion.name)
       sessionTokenRef.current = crypto.randomUUID()
-    } catch { /* network error */ }
+    } catch {}
   }, [onLocationSelect, onQueryChange])
 
   const visibleSuggestions = useMemo(() => {
@@ -247,33 +249,35 @@ export function SearchPill({
   }, [activeSuggestionIndex, canRetrieveSuggestion, handleSelect, query, visibleSuggestions])
 
   return (
-    <div className="relative">
-      {/* Pill */}
-      <div className="flex items-center bg-white/90 backdrop-blur-sm rounded-full shadow border border-white/50 h-10 overflow-hidden">
-        {/* Logo */}
+    <div className={cn('relative', fullWidth && 'w-full')}>
+      <div className={cn(
+        'flex items-center bg-white/90 backdrop-blur-sm shadow border border-white/50 h-10 overflow-hidden',
+        fullWidth ? 'w-full rounded-full' : 'rounded-full',
+      )}>
         <div className="flex items-center pl-4 pr-3 shrink-0">
           <LogoWordmark className="text-[1.4rem]" />
         </div>
 
-        {/* Divider */}
         <div className="w-px h-4 bg-border/40 shrink-0" />
 
-        {/* Search icon */}
         <button
-          onClick={isOpen ? undefined : openSearch}
+          onClick={fullWidth && isOpen ? clearSearch : (isOpen ? undefined : openSearch)}
           className={cn(
             'flex items-center justify-center shrink-0',
-            isOpen ? 'px-2.5 cursor-default' : 'px-3 hover:text-foreground/70'
+            fullWidth && isOpen ? 'px-2.5 hover:text-foreground/70' : isOpen ? 'px-2.5 cursor-default' : 'px-3 hover:text-foreground/70'
           )}
-          aria-label="Search locations"
-          tabIndex={isOpen ? -1 : 0}
+          aria-label={fullWidth && isOpen ? 'Go back' : 'Search locations'}
+          tabIndex={!fullWidth && isOpen ? -1 : 0}
         >
-          <Search className="w-4 h-4 text-muted-foreground" />
+          {fullWidth && isOpen
+            ? <ArrowLeft className="w-4 h-4 text-muted-foreground" />
+            : <Search className="w-4 h-4 text-muted-foreground" />
+          }
         </button>
 
         <div
           className="flex items-center min-w-0 overflow-hidden"
-          style={{
+          style={fullWidth ? { flex: 1 } : {
             maxWidth: isOpen ? '320px' : '0px',
             transition: 'max-width 350ms cubic-bezier(0.4, 0, 0.2, 1)',
             transitionDelay: isOpen ? '0ms' : '150ms',
@@ -285,15 +289,16 @@ export function SearchPill({
             value={query}
             onChange={handleInput}
             onKeyDown={handleInputKeyDown}
+            onFocus={fullWidth && !isOpen ? openSearch : undefined}
             placeholder="search anywhere..."
             aria-autocomplete="list"
             aria-controls={listboxId}
             aria-activedescendant={
               activeSuggestionIndex >= 0 ? `${listboxId}-option-${activeSuggestionIndex}` : undefined
             }
-            aria-hidden={!isOpen}
+            aria-hidden={!fullWidth && !isOpen}
             className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60 text-foreground"
-            style={{
+            style={fullWidth ? undefined : {
               opacity: isOpen ? 1 : 0,
               transition: 'opacity 150ms ease',
               transitionDelay: isOpen ? '150ms' : '0ms',
@@ -305,9 +310,12 @@ export function SearchPill({
             aria-label={hasSelectedLocation ? 'Clear selected location' : 'Collapse search'}
             className="flex items-center justify-center shrink-0 w-9 text-muted-foreground hover:text-foreground"
             style={{
-              opacity: isOpen ? 1 : 0,
+              opacity: fullWidth
+                ? (hasSelectedLocation || query.trim() ? 1 : 0)
+                : (isOpen ? 1 : 0),
+              pointerEvents: fullWidth && !hasSelectedLocation && !query.trim() ? 'none' : 'auto',
               transition: 'opacity 150ms ease',
-              transitionDelay: isOpen ? '150ms' : '0ms',
+              transitionDelay: fullWidth ? '0ms' : (isOpen ? '150ms' : '0ms'),
             }}
           >
             <X className="w-4 h-4" />
@@ -315,7 +323,6 @@ export function SearchPill({
         </div>
       </div>
 
-      {/* Autocomplete dropdown */}
       {visibleSuggestions.length > 0 && (
         <div
           id={listboxId}

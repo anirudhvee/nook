@@ -49,6 +49,7 @@ interface Props {
   totalCheckIns: number
   highlightedNookId?: string | null
   isCompact?: boolean
+  onExpand?: () => void
 }
 
 export function PassportPageClient({
@@ -56,6 +57,7 @@ export function PassportPageClient({
   totalCheckIns,
   highlightedNookId = null,
   isCompact = false,
+  onExpand,
 }: Props) {
   const [expandedNookId, setExpandedNookId] = useState<string | null>(highlightedNookId)
   const [highlightedStampId, setHighlightedStampId] = useState<string | null>(highlightedNookId)
@@ -161,11 +163,13 @@ export function PassportPageClient({
             >
               <button
                 type="button"
-                onClick={() =>
+                onClick={() => {
+                  const isOpening = expandedNookId !== stamp.nookId
                   setExpandedNookId(current =>
                     current === stamp.nookId ? null : stamp.nookId,
                   )
-                }
+                  if (isOpening) onExpand?.()
+                }}
                 className={cn(
                   'passport-stamp-shell group block w-full text-left transition-all duration-300',
                   'focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20',

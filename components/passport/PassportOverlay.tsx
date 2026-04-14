@@ -22,9 +22,10 @@ export interface PassportPin {
 interface Props {
   onClose: () => void
   onStampsLoaded?: (pins: PassportPin[]) => void
+  onStampExpand?: () => void
 }
 
-export function PassportOverlay({ onClose, onStampsLoaded }: Props) {
+export function PassportOverlay({ onClose, onStampsLoaded, onStampExpand }: Props) {
   const searchParams = useSearchParams()
   const highlightedNookId = searchParams.get('highlight')
   const [data, setData] = useState<PassportResponse | null>(null)
@@ -86,22 +87,19 @@ export function PassportOverlay({ onClose, onStampsLoaded }: Props) {
       cancelled = true
       controller.abort()
     }
-  // onClose and onStampsLoaded are stable callbacks from the parent — safe to omit
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return (
     <div className="flex h-full flex-col animate-in slide-in-from-right-4 duration-200">
-      <div className="shrink-0 border-b border-border px-4 pt-4 pb-3">
+      <div className="shrink-0 border-b border-border px-4 pt-2 pb-3">
         <button
           onClick={onClose}
-          className="mb-3 flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          className="flex items-center gap-2 text-base font-semibold transition-colors hover:text-foreground/70"
         >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          back to map
+          <ArrowLeft className="h-4 w-4 text-muted-foreground shrink-0" />
+          my passport
         </button>
-
-        <h2 className="text-base font-semibold leading-snug">my passport</h2>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 pt-3 pb-4">
@@ -126,6 +124,7 @@ export function PassportOverlay({ onClose, onStampsLoaded }: Props) {
             totalCheckIns={data.totalCheckIns}
             highlightedNookId={highlightedNookId}
             isCompact
+            onExpand={onStampExpand}
           />
         ) : null}
       </div>
