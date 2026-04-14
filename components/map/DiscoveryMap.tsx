@@ -393,6 +393,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
   const [isMobile, setIsMobile] = useState(false)
   const isMobileRef = useRef(false)
   const [mobileSheetSnap, setMobileSheetSnap] = useState<SnapPoint>('half')
+  const prevIsMobileRef = useRef(false)
 
   useEffect(() => { showLocDeniedBannerRef.current = showLocDeniedBanner }, [showLocDeniedBanner])
 
@@ -429,7 +430,8 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     const map = mapRef.current
     const attribution = attributionControlRef.current
     const navigation = navigationControlRef.current
-    if (!map || !attribution || !navigation) return
+    const geolocate = geolocateRef.current
+    if (!map || !attribution || !navigation || !geolocate) return
 
     if (isMobile) {
       if (desktopControlsAddedRef.current) {
@@ -441,11 +443,27 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     }
 
     if (!desktopControlsAddedRef.current) {
+      map.removeControl(geolocate)
       map.addControl(attribution, 'bottom-right')
       map.addControl(navigation, 'bottom-right')
+      map.addControl(geolocate, 'bottom-right')
       desktopControlsAddedRef.current = true
     }
   }, [isMobile])
+
+  useEffect(() => {
+    const wasMobile = prevIsMobileRef.current
+    prevIsMobileRef.current = isMobile
+
+    if (wasMobile || !isMobile) return
+
+    if (isPassportOpen || detailNook || selectedSearchLocation) {
+      setMobileSheetSnap('half')
+      return
+    }
+
+    setMobileSheetSnap(isSearchOpen ? 'peek' : 'half')
+  }, [isMobile, isPassportOpen, detailNook, selectedSearchLocation, isSearchOpen])
 
   useEffect(() => {
     if (!isMobile) return
