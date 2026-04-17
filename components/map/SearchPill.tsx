@@ -297,7 +297,10 @@ export function SearchPill({
               activeSuggestionIndex >= 0 ? `${listboxId}-option-${activeSuggestionIndex}` : undefined
             }
             aria-hidden={!fullWidth && !isOpen}
-            className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60 text-foreground"
+            className={cn(
+              'min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground/60 text-foreground',
+              fullWidth ? 'text-base' : 'text-sm',
+            )}
             style={fullWidth ? undefined : {
               opacity: isOpen ? 1 : 0,
               transition: 'opacity 150ms ease',

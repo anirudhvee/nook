@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
 import {
   ArrowLeft,
+  ChevronUp,
   Star,
   MapPin,
   Clock,
@@ -98,6 +99,8 @@ function toAiReviews(reviews: PlaceReview[] | undefined): Array<{ text: string; 
 interface Props {
   nook: NookPlace
   onClose: () => void
+  showPeekLift?: boolean
+  onPeekLift?: () => void
 }
 
 function formatCheckInDate(date: string | null): string | null {
@@ -110,7 +113,7 @@ function formatCheckInDate(date: string | null): string | null {
   }).format(new Date(date))
 }
 
-export function NookDetailPanel({ nook, onClose }: Props) {
+export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLift }: Props) {
   const [supabase] = useState(() => createBrowserSupabaseClient())
   const [detail, setDetail] = useState<PlaceDetail | null>(null)
   const [photo, setPhoto] = useState<NookPhoto | undefined>(nook.photo)
@@ -374,24 +377,41 @@ export function NookDetailPanel({ nook, onClose }: Props) {
 
   return (
     <div className="flex h-full flex-col animate-in slide-in-from-left-4 duration-200">
-      <div className="shrink-0 border-b border-border px-4 pt-2 pb-3">
-        <div className="flex items-center gap-2">
+      <div className="shrink-0 border-b border-border px-4 pt-2 pb-3 md:pt-1">
+        {showPeekLift && onPeekLift ? (
           <button
-            onClick={onClose}
-            className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
-            aria-label="Back to list"
+            type="button"
+            onClick={onPeekLift}
+            className="flex w-full items-center justify-between gap-3 text-left transition-colors hover:text-foreground"
           >
-            <ArrowLeft className="h-4 w-4" />
+            {fetching ? (
+              <div className="h-5 w-3/4 animate-pulse rounded bg-muted" />
+            ) : (
+              <h2 className="min-w-0 flex-1 truncate text-base font-semibold leading-snug">{nook.name}</h2>
+            )}
+            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-primary/15 bg-primary/10 text-primary shadow-sm">
+              <ChevronUp className="h-4 w-4" strokeWidth={2.25} />
+            </span>
           </button>
+        ) : (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onClose}
+              className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
+              aria-label="Back to list"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
 
-          {fetching ? (
-            <div className="h-5 w-3/4 animate-pulse rounded bg-muted" />
-          ) : (
-            <h2 className="text-base font-semibold leading-snug truncate">{nook.name}</h2>
-          )}
-        </div>
+            {fetching ? (
+              <div className="h-5 w-3/4 animate-pulse rounded bg-muted" />
+            ) : (
+              <h2 className="text-base font-semibold leading-snug truncate">{nook.name}</h2>
+            )}
+          </div>
+        )}
 
-        {!fetching && (
+        {!fetching && !showPeekLift && (
           <div className="mt-1.5 ml-6 flex flex-wrap items-center gap-2">
             <span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
               {NOOK_TYPE_LABELS[nook.type]}

@@ -1,6 +1,6 @@
 'use client'
 
-import type { CSSProperties } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { useRef, useEffect, useLayoutEffect, useState, useCallback } from 'react'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
@@ -40,7 +40,6 @@ import { PassportOverlay, type PassportPin } from '@/components/passport/Passpor
 import { buildPlacePhotoUrl } from '@/lib/place-photo'
 import {
   HEADER_H as MOBILE_SHEET_HEADER_H,
-  HALF_VISIBLE_RATIO,
   MobileBottomSheet,
   getMobileHalfVisibleHeight,
   type SnapPoint,
@@ -92,6 +91,10 @@ type PlacesPanelProps = {
   onToggleRadius: () => void
   onRadiusChange: (v: number) => void
   onSelectNook: (nook: NookPlace) => void
+  headerAction?: ReactNode
+  showUtilityControls?: boolean
+  showPeekLift?: boolean
+  onPeekLift?: () => void
 }
 
 function getResultsSummary(
@@ -171,6 +174,10 @@ function PlacesPanel({
   onToggleRadius,
   onRadiusChange,
   onSelectNook,
+  headerAction,
+  showUtilityControls = true,
+  showPeekLift = false,
+  onPeekLift,
 }: PlacesPanelProps) {
   const placesWithDist = places.map(nook => ({
     ...nook,
@@ -183,38 +190,60 @@ function PlacesPanel({
   return (
     <>
       <div className="px-4 pt-2 pb-3 shrink-0">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="font-semibold text-base truncate">{title}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {getResultsSummary(places.length, loading, radiusM, useMiles, isRadiusActive)}
-            </p>
+        {showPeekLift && onPeekLift ? (
+          <button
+            type="button"
+            onClick={onPeekLift}
+            className="flex w-full items-start justify-between gap-3 text-left transition-colors hover:text-foreground"
+          >
+            <div className="min-w-0">
+              <p className="font-semibold text-base truncate">{title}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {getResultsSummary(places.length, loading, radiusM, useMiles, isRadiusActive)}
+              </p>
+            </div>
+            <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-primary/15 bg-primary/10 text-primary shadow-sm">
+              <ChevronUp className="h-4 w-4" strokeWidth={2.25} />
+            </span>
+          </button>
+        ) : (
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="font-semibold text-base truncate">{title}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {getResultsSummary(places.length, loading, radiusM, useMiles, isRadiusActive)}
+              </p>
+            </div>
+            {headerAction ?? (
+              showUtilityControls ? (
+                <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+                  <button
+                    onClick={onToggleRadius}
+                    title="Set search radius"
+                    aria-label="Set search radius"
+                    aria-pressed={isRadiusActive}
+                    className={cn(
+                      'h-[22px] w-[22px] rounded-full flex items-center justify-center border transition-all duration-150',
+                      isRadiusActive
+                        ? 'bg-primary/10 text-primary border-primary/30'
+                        : 'text-muted-foreground border-border/50 hover:border-border hover:text-foreground',
+                    )}
+                  >
+                    <ScanSearch className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={onToggleUnit}
+                    className="text-xs font-medium text-muted-foreground border border-border rounded-full px-2 py-0.5 hover:bg-muted transition-colors"
+                  >
+                    {useMiles ? 'mi' : 'km'}
+                  </button>
+                </div>
+              ) : null
+            )}
           </div>
-          <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
-            <button
-              onClick={onToggleRadius}
-              title="Set search radius"
-              aria-label="Set search radius"
-              aria-pressed={isRadiusActive}
-              className={cn(
-                'h-[22px] w-[22px] rounded-full flex items-center justify-center border transition-all duration-150',
-                isRadiusActive
-                  ? 'bg-primary/10 text-primary border-primary/30'
-                  : 'text-muted-foreground border-border/50 hover:border-border hover:text-foreground',
-              )}
-            >
-              <ScanSearch className="w-3 h-3" />
-            </button>
-            <button
-              onClick={onToggleUnit}
-              className="text-xs font-medium text-muted-foreground border border-border rounded-full px-2 py-0.5 hover:bg-muted transition-colors"
-            >
-              {useMiles ? 'mi' : 'km'}
-            </button>
-          </div>
-        </div>
+        )}
 
-        {isRadiusActive && (
+        {!showPeekLift && showUtilityControls && isRadiusActive && (
           <div className="mt-3 pt-3 border-t border-border/40">
             <div className="mb-2 flex items-center justify-between gap-3">
               <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground/70">
@@ -496,6 +525,23 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
       document.documentElement.style.removeProperty('--mobile-geolocate-pointer-events')
     }
   }, [isMobile, mobileSheetSnap])
+
+  useEffect(() => {
+    if (!isMobile) return
+
+    const html = document.documentElement
+    const body = document.body
+    const prevHtmlOverscrollY = html.style.overscrollBehaviorY
+    const prevBodyOverscrollY = body.style.overscrollBehaviorY
+
+    html.style.overscrollBehaviorY = 'none'
+    body.style.overscrollBehaviorY = 'none'
+
+    return () => {
+      html.style.overscrollBehaviorY = prevHtmlOverscrollY
+      body.style.overscrollBehaviorY = prevBodyOverscrollY
+    }
+  }, [isMobile])
 
 
   useEffect(() => {
@@ -1405,9 +1451,27 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     : detailNook ? 'detail'
     : selectedSearchLocation ? 'search'
     : 'nearby'
+  const showPeekLift = mobileSheetSnap === 'peek' && mobileSheetContent !== 'passport'
+
+  const handleLiftFromPeek = useCallback(() => {
+    if (isSearchOpen && !selectedSearchLocation) {
+      collapseSearch()
+    }
+    setMobileSheetSnap('half')
+  }, [collapseSearch, isSearchOpen, selectedSearchLocation])
+
+  const handleMobileSnapChange = useCallback((snap: SnapPoint) => {
+    const nextSnap = mobileSheetContent === 'passport' && snap === 'peek' ? 'half' : snap
+
+    if (isSearchOpen && !selectedSearchLocation && mobileSheetSnap === 'peek' && nextSnap !== 'peek') {
+      collapseSearch()
+    }
+
+    setMobileSheetSnap(nextSnap)
+  }, [collapseSearch, isSearchOpen, mobileSheetContent, mobileSheetSnap, selectedSearchLocation])
 
   return (
-    <div className="h-dvh w-screen relative overflow-hidden">
+    <div className="h-dvh w-screen relative overflow-hidden overscroll-none">
       <div className="absolute inset-0">
         <div ref={mapContainerRef} className="w-full h-full" />
       </div>
@@ -1510,9 +1574,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
 
           <MobileBottomSheet
             snapPoint={mobileSheetSnap}
-            onSnapChange={(snap) =>
-              setMobileSheetSnap(mobileSheetContent === 'passport' && snap === 'peek' ? 'half' : snap)
-            }
+            onSnapChange={handleMobileSnapChange}
           >
             {mobileSheetContent === 'passport' && (
               <PassportOverlay
@@ -1522,7 +1584,12 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
               />
             )}
             {mobileSheetContent === 'detail' && detailNook && (
-              <NookDetailPanel nook={detailNook} onClose={handlePanelClose} />
+              <NookDetailPanel
+                nook={detailNook}
+                onClose={handlePanelClose}
+                showPeekLift={showPeekLift}
+                onPeekLift={showPeekLift ? handleLiftFromPeek : undefined}
+              />
             )}
             {mobileSheetContent === 'search' && selectedSearchLocation && (
               <PlacesPanel
@@ -1538,6 +1605,9 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
                 onToggleRadius={handleToggleRadius}
                 onRadiusChange={handleRadiusChange}
                 onSelectNook={handleSelectNook}
+                showUtilityControls={!showPeekLift}
+                showPeekLift={showPeekLift}
+                onPeekLift={showPeekLift ? handleLiftFromPeek : undefined}
               />
             )}
             {mobileSheetContent === 'nearby' && (
@@ -1554,6 +1624,9 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
                 onToggleRadius={handleToggleRadius}
                 onRadiusChange={handleRadiusChange}
                 onSelectNook={handleSelectNook}
+                showUtilityControls={!showPeekLift}
+                showPeekLift={showPeekLift}
+                onPeekLift={showPeekLift ? handleLiftFromPeek : undefined}
               />
             )}
           </MobileBottomSheet>

@@ -47,6 +47,7 @@ interface Props {
 
 export function MobileBottomSheet({ snapPoint, onSnapChange, children }: Props) {
   const [dragPx, setDragPx] = useState<number | null>(null)
+  const [settlingSnap, setSettlingSnap] = useState<SnapPoint | null>(null)
 
   const isDragging        = useRef(false)
   const touchStartY       = useRef(0)
@@ -63,21 +64,25 @@ export function MobileBottomSheet({ snapPoint, onSnapChange, children }: Props) 
   snapPointRef.current  = snapPoint
   onSnapChangeRef.current = onSnapChange
 
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+  useEffect(() => {
+    if (settlingSnap === snapPoint) {
+      setSettlingSnap(null)
+    }
+  }, [settlingSnap, snapPoint])
+
+  const startDrag = useCallback((startY: number) => {
     isDragging.current      = true
     hasDraggedRef.current   = false
-    const y                 = e.touches[0].clientY
-    touchStartY.current     = y
+    touchStartY.current     = startY
     touchStartSnapPx.current = computeSnapPx(snapPointRef.current)
-    lastTouchY.current      = y
+    lastTouchY.current      = startY
     lastTouchTime.current   = Date.now()
     velocityRef.current     = 0
   }, [])
 
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+  const updateDrag = useCallback((currentY: number) => {
     if (!isDragging.current) return
     const now      = Date.now()
-    const currentY = e.touches[0].clientY
     const dt       = now - lastTouchTime.current
 
     if (dt > 0) {
@@ -96,14 +101,14 @@ export function MobileBottomSheet({ snapPoint, onSnapChange, children }: Props) 
     setDragPx(newPx)
   }, [])
 
-  const handleTouchEnd = useCallback(() => {
+  const finishDrag = useCallback((expandPeekOnTap: boolean) => {
     if (!isDragging.current) return
     isDragging.current = false
 
-    if (!hasDraggedRef.current && snapPointRef.current === 'peek') {
+    if (!hasDraggedRef.current && expandPeekOnTap && snapPointRef.current === 'peek') {
       setDragPx(null)
       dragPxRef.current = null
-      onSnapChange('half')
+      onSnapChangeRef.current('half')
       return
     }
 
@@ -118,10 +123,28 @@ export function MobileBottomSheet({ snapPoint, onSnapChange, children }: Props) 
       next = nearestSnap(dragPxRef.current ?? computeSnapPx(snapPointRef.current))
     }
 
+    setSettlingSnap(next)
     dragPxRef.current = null
     setDragPx(null)
-    onSnapChange(next)
-  }, [onSnapChange])
+    onSnapChangeRef.current(next)
+  }, [])
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    startDrag(e.touches[0].clientY)
+  }, [startDrag])
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    updateDrag(e.touches[0].clientY)
+    e.preventDefault()
+  }, [updateDrag])
+
+  const handleTouchEnd = useCallback(() => {
+    finishDrag(true)
+  }, [finishDrag])
+
+  const handleTouchCancel = useCallback(() => {
+    finishDrag(true)
+  }, [finishDrag])
 
   useEffect(() => {
     const el = contentRef.current
@@ -143,28 +166,41 @@ export function MobileBottomSheet({ snapPoint, onSnapChange, children }: Props) 
     }
 
     function handleTouchMove(e: TouchEvent) {
-      const deltaY = e.touches[0].clientY - contentTouchStartY
+      const currentY = e.touches[0].clientY
+      const deltaY = currentY - contentTouchStartY
       const snap   = snapPointRef.current
+      const scrollTop = getScrollTop(e.target)
+      const shouldDragUp = (snap === 'peek' || snap === 'half') && deltaY < -6
+      const shouldDragDown = (snap === 'half' || snap === 'full') && deltaY > 6 && scrollTop <= 0
 
-      if (snap === 'half' && deltaY < -10) {
-        onSnapChangeRef.current('full')
-        e.preventDefault()
-      } else if (snap === 'full' && getScrollTop(e.target) <= 0 && deltaY > 30) {
-        onSnapChangeRef.current('half')
-        e.preventDefault()
+      if (!isDragging.current) {
+        if (!shouldDragUp && !shouldDragDown) return
+        startDrag(contentTouchStartY)
       }
+
+      updateDrag(currentY)
+      e.preventDefault()
+    }
+
+    function handleTouchEnd() {
+      finishDrag(false)
     }
 
     el.addEventListener('touchstart', handleTouchStart, { passive: true })
     el.addEventListener('touchmove', handleTouchMove, { passive: false })
+    el.addEventListener('touchend', handleTouchEnd, { passive: true })
+    el.addEventListener('touchcancel', handleTouchEnd, { passive: true })
 
     return () => {
       el.removeEventListener('touchstart', handleTouchStart)
       el.removeEventListener('touchmove', handleTouchMove)
+      el.removeEventListener('touchend', handleTouchEnd)
+      el.removeEventListener('touchcancel', handleTouchEnd)
     }
-  }, [])
+  }, [finishDrag, startDrag, updateDrag])
 
-  const translateY = dragPx !== null ? `${dragPx}px` : SNAP_TRANSLATE[snapPoint]
+  const restingSnap = settlingSnap ?? snapPoint
+  const translateY = dragPx !== null ? `${dragPx}px` : SNAP_TRANSLATE[restingSnap]
   const animate    = dragPx === null
 
   return (
@@ -175,7 +211,7 @@ export function MobileBottomSheet({ snapPoint, onSnapChange, children }: Props) 
         'bg-background/95 backdrop-blur-sm',
         'border-t border-x border-border',
         'shadow-[0_-4px_24px_rgba(0,0,0,0.07)]',
-        animate && 'transition-transform duration-300 ease-out',
+        animate && 'transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]',
       )}
       style={{
         height: `calc(100dvh - ${HEADER_H}px)`,
@@ -188,6 +224,7 @@ export function MobileBottomSheet({ snapPoint, onSnapChange, children }: Props) 
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchCancel}
       >
         <div className="w-9 h-1 rounded-full bg-border/70" />
       </div>
