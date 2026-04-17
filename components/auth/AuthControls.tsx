@@ -336,9 +336,8 @@ export function AuthControls({ variant, showPassport = true, passportIcon = fals
             className="flex size-10 items-center justify-center rounded-full border border-white/60 bg-white/90 shadow backdrop-blur-sm transition-colors hover:bg-white"
             aria-label="My passport"
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="https://cdn-icons-png.flaticon.com/512/3416/3416538.png"
+              src="/icons/passport.png"
               alt=""
               width={22}
               height={22}
