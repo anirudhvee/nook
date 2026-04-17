@@ -17,7 +17,6 @@ import {
   BookOpen,
   Users,
   Building2,
-  Info,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AuthControls } from '@/components/auth/AuthControls'
@@ -388,6 +387,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
   const geolocateRef = useRef<mapboxgl.GeolocateControl | null>(null)
   const attributionControlRef = useRef<mapboxgl.AttributionControl | null>(null)
   const navigationControlRef = useRef<mapboxgl.NavigationControl | null>(null)
+  const mobileAttributionAddedRef = useRef(false)
   const desktopControlsAddedRef = useRef(false)
   const bannerDismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   passportOpenRef.current = isPassportOpen
@@ -414,8 +414,6 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
   const [showLocDeniedBanner, setShowLocDeniedBanner] = useState(false)
   const [locBannerExiting, setLocBannerExiting] = useState(false)
   const [locBannerShaking, setLocBannerShaking] = useState(false)
-  const [mobileAttributionOpen, setMobileAttributionOpen] = useState(false)
-  const [mobileFeedbackHref, setMobileFeedbackHref] = useState('https://apps.mapbox.com/feedback/')
   const showLocDeniedBannerRef = useRef(false)
   const triggerBannerAttentionRef = useRef<() => void>(() => {})
 
@@ -468,7 +466,16 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
         map.removeControl(navigation)
         desktopControlsAddedRef.current = false
       }
+      if (!mobileAttributionAddedRef.current) {
+        map.addControl(attribution, 'bottom-left')
+        mobileAttributionAddedRef.current = true
+      }
       return
+    }
+
+    if (mobileAttributionAddedRef.current) {
+      map.removeControl(attribution)
+      mobileAttributionAddedRef.current = false
     }
 
     if (!desktopControlsAddedRef.current) {
@@ -895,23 +902,6 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     if (isMobileRef.current) setMobileSheetSnap('half')
   }, [])
 
-  const toggleMobileAttribution = useCallback(() => {
-    if (!mobileAttributionOpen) {
-      const map = mapRef.current
-      if (map) {
-        const center = map.getCenter()
-        const zoom = map.getZoom()
-        setMobileFeedbackHref(
-          `https://apps.mapbox.com/feedback/#/${center.lng.toFixed(5)}/${center.lat.toFixed(5)}/${zoom.toFixed(2)}`
-        )
-      } else {
-        setMobileFeedbackHref('https://apps.mapbox.com/feedback/')
-      }
-    }
-
-    setMobileAttributionOpen(open => !open)
-  }, [mobileAttributionOpen])
-
   const handleLocationSelect = useCallback((lng: number, lat: number, name: string) => {
     const wasPassport = passportOpenRef.current
     if (wasPassport) {
@@ -1110,7 +1100,10 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     attributionControlRef.current = attributionControl
     const navigationControl = new mapboxgl.NavigationControl({ showCompass: false })
     navigationControlRef.current = navigationControl
-    if (!isMobileRef.current) {
+    if (isMobileRef.current) {
+      map.addControl(attributionControl, 'bottom-left')
+      mobileAttributionAddedRef.current = true
+    } else {
       map.addControl(attributionControl, 'bottom-right')
       map.addControl(navigationControl, 'bottom-right')
       desktopControlsAddedRef.current = true
@@ -1519,55 +1512,6 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
                     {label}
                   </button>
                 ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="absolute bottom-[5px] left-[96px] z-10">
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={toggleMobileAttribution}
-                aria-label="Map attribution"
-                aria-expanded={mobileAttributionOpen}
-                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/50 bg-white/90 text-foreground/70 shadow-sm backdrop-blur-sm"
-              >
-                <Info className="h-3.5 w-3.5" strokeWidth={2.25} />
-              </button>
-              <div
-                className={cn(
-                  'overflow-hidden rounded-full border border-black/10 bg-white/95 shadow-sm backdrop-blur-sm transition-all duration-200 ease-out',
-                  mobileAttributionOpen
-                    ? 'max-w-[255px] px-2.5 py-1 opacity-100'
-                    : 'max-w-0 px-0 py-0 opacity-0 border-transparent',
-                )}
-              >
-                <div className="flex h-4 items-center gap-2 whitespace-nowrap text-[10px] font-medium leading-none text-muted-foreground">
-                  <a
-                    href="https://www.mapbox.com/about/maps"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="hover:text-foreground"
-                  >
-                    © Mapbox
-                  </a>
-                  <a
-                    href="https://www.openstreetmap.org/copyright"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="hover:text-foreground"
-                  >
-                    © OpenStreetMap
-                  </a>
-                  <a
-                    href={mobileFeedbackHref}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="hover:text-foreground"
-                  >
-                    Improve this map
-                  </a>
-                </div>
               </div>
             </div>
           </div>

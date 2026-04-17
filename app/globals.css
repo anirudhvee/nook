@@ -294,10 +294,6 @@
 }
 
 @media (max-width: 767px) {
-  .mapboxgl-ctrl-attrib {
-    display: none !important;
-  }
-
   .mapboxgl-ctrl-bottom-right {
     bottom: var(--mobile-geolocate-bottom, 12px) !important;
     z-index: 25 !important;
