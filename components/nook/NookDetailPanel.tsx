@@ -406,7 +406,7 @@ export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLif
             {fetching ? (
               <div className="h-5 w-3/4 animate-pulse rounded bg-muted" />
             ) : (
-              <h2 className="text-base font-semibold leading-snug truncate">{nook.name}</h2>
+              <h2 className="min-w-0 flex-1 truncate text-base font-semibold leading-snug">{nook.name}</h2>
             )}
           </div>
         )}
