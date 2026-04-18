@@ -31,6 +31,8 @@ import { cn } from "@/lib/utils";
 
 type AuthControlsProps = {
   variant: "map" | "navbar";
+  showPassport?: boolean;
+  passportIcon?: boolean;
 };
 
 function getIdentityProviders(user: User | null, identities: UserIdentity[]) {
@@ -50,7 +52,7 @@ function getIdentityProviders(user: User | null, identities: UserIdentity[]) {
   );
 }
 
-export function AuthControls({ variant }: AuthControlsProps) {
+export function AuthControls({ variant, showPassport = true, passportIcon = false }: AuthControlsProps) {
   const router = useRouter();
   const pathname = usePathname();
   const [supabase] = useState(() => createBrowserSupabaseClient());
@@ -321,19 +323,36 @@ export function AuthControls({ variant }: AuthControlsProps) {
 
   const dropdownClasses =
     variant === "map"
-      ? "absolute right-0 top-12 min-w-40 rounded-2xl border border-border/80 bg-background/95 p-1.5 shadow-xl backdrop-blur-sm"
-      : "absolute right-0 top-11 min-w-40 rounded-2xl border border-border bg-popover p-1.5 shadow-lg";
+      ? "absolute right-0 top-12 z-10 min-w-40 rounded-2xl border border-border/80 bg-background/95 p-1.5 shadow-xl backdrop-blur-sm"
+      : "absolute right-0 top-11 z-10 min-w-40 rounded-2xl border border-border bg-popover p-1.5 shadow-lg";
 
   return (
     <>
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={handlePassportClick}
-          className={passportClasses}
-        >
-          my passport
-        </button>
+        {passportIcon ? (
+          <button
+            type="button"
+            onClick={handlePassportClick}
+            className="flex size-10 items-center justify-center rounded-full border border-white/60 bg-white/90 shadow backdrop-blur-sm transition-colors hover:bg-white"
+            aria-label="My passport"
+          >
+            <img
+              src="/icons/passport.png"
+              alt=""
+              width={22}
+              height={22}
+              className="object-contain"
+            />
+          </button>
+        ) : showPassport && (
+          <button
+            type="button"
+            onClick={handlePassportClick}
+            className={passportClasses}
+          >
+            my passport
+          </button>
+        )}
 
         {user ? (
           <div className="relative" ref={dropdownRef}>
