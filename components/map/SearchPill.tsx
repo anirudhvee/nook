@@ -260,6 +260,7 @@ export function SearchPill({
   const handleClearButtonClick =
     hasSelectedLocation ? clearSearch : hasTypedQuery ? clearTypedQuery : collapseSearch
   const clearButtonLabel = hasSelectedLocation || hasTypedQuery ? 'Clear search' : 'Collapse search'
+  const isClearVisible = fullWidth ? (hasSelectedLocation || hasTypedQuery) : isOpen
 
   return (
     <div className={cn('relative', fullWidth && 'w-full')}>
@@ -274,7 +275,7 @@ export function SearchPill({
         <div className="w-px h-4 bg-border/40 shrink-0" />
 
         <button
-          onClick={fullWidth && isOpen ? clearSearch : (isOpen ? undefined : openSearch)}
+          onClick={fullWidth && isOpen ? collapseSearch : (isOpen ? undefined : openSearch)}
           className={cn(
             'flex items-center justify-center shrink-0',
             fullWidth && isOpen ? 'px-2.5 hover:text-foreground/70' : isOpen ? 'px-2.5 cursor-default' : 'px-3 hover:text-foreground/70'
@@ -324,12 +325,13 @@ export function SearchPill({
           <button
             onClick={handleClearButtonClick}
             aria-label={clearButtonLabel}
+            aria-hidden={!isClearVisible}
+            tabIndex={isClearVisible ? 0 : -1}
+            disabled={!isClearVisible}
             className="flex items-center justify-center shrink-0 w-9 text-muted-foreground hover:text-foreground"
             style={{
-              opacity: fullWidth
-                ? (hasSelectedLocation || query.trim() ? 1 : 0)
-                : (isOpen ? 1 : 0),
-              pointerEvents: fullWidth && !hasSelectedLocation && !query.trim() ? 'none' : 'auto',
+              opacity: isClearVisible ? 1 : 0,
+              pointerEvents: isClearVisible ? 'auto' : 'none',
               transition: 'opacity 150ms ease',
               transitionDelay: fullWidth ? '0ms' : (isOpen ? '150ms' : '0ms'),
             }}

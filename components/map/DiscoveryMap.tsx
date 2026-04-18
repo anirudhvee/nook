@@ -419,6 +419,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
 
   const [isMobile, setIsMobile] = useState(false)
   const isMobileRef = useRef(false)
+  const [viewportHeight, setViewportHeight] = useState(0)
   const [mobileSheetSnap, setMobileSheetSnap] = useState<SnapPoint>('half')
   const prevIsMobileRef = useRef(false)
 
@@ -426,32 +427,51 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
 
   useLayoutEffect(() => {
     const mq = window.matchMedia('(max-width: 767px)')
+    const syncViewportHeight = () => {
+      const next = Math.round(window.visualViewport?.height ?? window.innerHeight)
+      setViewportHeight(current => current === next ? current : next)
+    }
     const update = (matches: boolean) => {
       setIsMobile(matches)
       isMobileRef.current = matches
     }
     update(mq.matches)
+    syncViewportHeight()
     const handler = (e: MediaQueryListEvent) => update(e.matches)
     mq.addEventListener('change', handler)
-    return () => mq.removeEventListener('change', handler)
+    window.addEventListener('resize', syncViewportHeight)
+    window.addEventListener('orientationchange', syncViewportHeight)
+    window.visualViewport?.addEventListener('resize', syncViewportHeight)
+    return () => {
+      mq.removeEventListener('change', handler)
+      window.removeEventListener('resize', syncViewportHeight)
+      window.removeEventListener('orientationchange', syncViewportHeight)
+      window.visualViewport?.removeEventListener('resize', syncViewportHeight)
+    }
   }, [])
+
+  const getCurrentViewportHeight = useCallback(() => {
+    if (viewportHeight > 0) return viewportHeight
+    return Math.round(window.visualViewport?.height ?? window.innerHeight)
+  }, [viewportHeight])
 
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
 
     const zeroPad = { top: 0, bottom: 0, left: 0, right: 0 }
+    const currentViewportHeight = getCurrentViewportHeight()
     const nextPad = isMobile
       ? {
           top: MOBILE_SHEET_HEADER_H,
-          bottom: Math.round(getMobileHalfVisibleHeight(window.innerHeight)),
+          bottom: Math.round(getMobileHalfVisibleHeight(currentViewportHeight)),
           left: 0,
           right: 0,
         }
       : zeroPad
 
     map.setPadding(nextPad)
-  }, [isMobile])
+  }, [getCurrentViewportHeight, isMobile])
 
   useEffect(() => {
     const map = mapRef.current
@@ -514,7 +534,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
       return
     }
 
-    const halfVisibleHeight = Math.round(getMobileHalfVisibleHeight(window.innerHeight))
+    const halfVisibleHeight = Math.round(getMobileHalfVisibleHeight(getCurrentViewportHeight()))
     const bottom =
       mobileSheetSnap === 'half'
         ? halfVisibleHeight + 8
@@ -531,7 +551,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
       document.documentElement.style.removeProperty('--mobile-geolocate-opacity')
       document.documentElement.style.removeProperty('--mobile-geolocate-pointer-events')
     }
-  }, [isMobile, mobileSheetSnap])
+  }, [getCurrentViewportHeight, isMobile, mobileSheetSnap])
 
   useEffect(() => {
     if (!isMobile) return
@@ -709,7 +729,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     if (!map) return
 
     const bounds = getCircleBounds(center, radius)
-    const mobileHalfVisibleHeight = Math.round(getMobileHalfVisibleHeight(window.innerHeight))
+    const mobileHalfVisibleHeight = Math.round(getMobileHalfVisibleHeight(getCurrentViewportHeight()))
     const camera = map.cameraForBounds(bounds, {
       padding: isMobileRef.current
         ? { top: 110, bottom: mobileHalfVisibleHeight + 30, left: 24, right: 24 }
@@ -720,7 +740,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
 
     const zoom = Math.max(11, Math.min(13, camera.zoom ?? 12))
     map.easeTo({ center: camera.center ?? center, zoom, duration: 300 })
-  }, [])
+  }, [getCurrentViewportHeight])
 
   const handleRadiusChange = useCallback((value: number) => {
     radiusMRef.current = value
@@ -834,7 +854,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     for (const pin of pins) bounds.extend([pin.lng, pin.lat])
 
     const MOBILE_HEADER_H = MOBILE_SHEET_HEADER_H
-    const mobileBottomPad = Math.round(getMobileHalfVisibleHeight(window.innerHeight)) + 10
+    const mobileBottomPad = Math.round(getMobileHalfVisibleHeight(getCurrentViewportHeight())) + 10
     const pad = isMobileRef.current
       ? { top: MOBILE_HEADER_H, bottom: mobileBottomPad, left: 20, right: 20 }
       : { top: 80, bottom: 80, left: 340, right: Math.round(window.innerWidth * 0.5) + 40 }
@@ -925,7 +945,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
 
     const zeroPad = { top: 0, bottom: 0, left: 0, right: 0 }
     const resetPad = isMobileRef.current
-      ? { top: MOBILE_SHEET_HEADER_H, bottom: Math.round(getMobileHalfVisibleHeight(window.innerHeight)), left: 0, right: 0 }
+      ? { top: MOBILE_SHEET_HEADER_H, bottom: Math.round(getMobileHalfVisibleHeight(getCurrentViewportHeight())), left: 0, right: 0 }
       : zeroPad
     if (isRadiusActive) {
       if (wasPassport) mapRef.current?.setPadding(resetPad)
@@ -939,7 +959,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
       })
     }
     void loadSearchedPlaces(location, filter, { mapTarget: 'search', updateMap: true })
-  }, [clearPassportMarkers, clearSelectedNook, clearSelectedNookState, filter, fitToCircle, isRadiusActive, loadSearchedPlaces, showNearbyMarkers, stopPassportRotation])
+  }, [clearPassportMarkers, clearSelectedNook, clearSelectedNookState, filter, fitToCircle, getCurrentViewportHeight, isRadiusActive, loadSearchedPlaces, showNearbyMarkers, stopPassportRotation])
 
   const fetchNookById = useCallback(async (id: string): Promise<NookPlace | null> => {
     try {
@@ -1038,7 +1058,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
       const MOBILE_H = MOBILE_SHEET_HEADER_H
       const zeroPad = { top: 0, bottom: 0, left: 0, right: 0 }
       const resetPad = isMobileRef.current
-        ? { top: MOBILE_H, bottom: Math.round(getMobileHalfVisibleHeight(window.innerHeight)), left: 0, right: 0 }
+        ? { top: MOBILE_H, bottom: Math.round(getMobileHalfVisibleHeight(getCurrentViewportHeight())), left: 0, right: 0 }
         : zeroPad
       mapRef.current?.setPadding(resetPad)
       const searchLoc = selectedSearchLocationRef.current
@@ -1067,7 +1087,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
         }
       }
     }
-  }, [isPassportOpen, stopPassportRotation, clearPassportMarkers, showNearbyMarkers, fitToCircle, isRadiusActive])
+  }, [getCurrentViewportHeight, isPassportOpen, stopPassportRotation, clearPassportMarkers, showNearbyMarkers, fitToCircle, isRadiusActive])
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return
@@ -1179,7 +1199,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
       const MOBILE_H = MOBILE_SHEET_HEADER_H
       map.setPadding({
         top: MOBILE_H,
-        bottom: Math.round(getMobileHalfVisibleHeight(window.innerHeight)),
+        bottom: Math.round(getMobileHalfVisibleHeight(getCurrentViewportHeight())),
         left: 0,
         right: 0,
       })
