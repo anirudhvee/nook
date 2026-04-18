@@ -1464,7 +1464,8 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     : detailNook ? 'detail'
     : selectedSearchLocation ? 'search'
     : 'nearby'
-  const showPeekLift = mobileSheetSnap === 'peek' && mobileSheetContent !== 'passport'
+  const isSearchPeekState = isSearchOpen && !selectedSearchLocation
+  const showPeekLift = mobileSheetSnap === 'peek' && (mobileSheetContent !== 'passport' || isSearchPeekState)
 
   const handleLiftFromPeek = useCallback(() => {
     if (isSearchOpen && !selectedSearchLocation) {
@@ -1474,14 +1475,18 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
   }, [collapseSearch, isSearchOpen, selectedSearchLocation])
 
   const handleMobileSnapChange = useCallback((snap: SnapPoint) => {
-    const nextSnap = mobileSheetContent === 'passport' && snap === 'peek' ? 'half' : snap
+    // Passport normally stays half/full, but when search is open without a selected
+    // location we intentionally allow peek so the panel drops and search can take over.
+    const nextSnap = mobileSheetContent === 'passport' && snap === 'peek' && !isSearchPeekState
+      ? 'half'
+      : snap
 
     if (isSearchOpen && !selectedSearchLocation && mobileSheetSnap === 'peek' && nextSnap !== 'peek') {
       collapseSearch()
     }
 
     setMobileSheetSnap(nextSnap)
-  }, [collapseSearch, isSearchOpen, mobileSheetContent, mobileSheetSnap, selectedSearchLocation])
+  }, [collapseSearch, isSearchOpen, isSearchPeekState, mobileSheetContent, mobileSheetSnap, selectedSearchLocation])
 
   return (
     <div className="h-dvh w-screen relative overflow-hidden overscroll-none">
