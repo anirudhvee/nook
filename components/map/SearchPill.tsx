@@ -64,6 +64,7 @@ export function SearchPill({
   const listboxId = useId()
 
   const hasSelectedLocation = selectedLocation !== null
+  const hasTypedQuery = query.trim().length > 0
   const canShowSuggestions = isOpen && !hasSelectedLocation && query.trim().length >= 3
   const canRetrieveSuggestion = useCallback((suggestion: SearchBoxSuggestion) => {
     const searchCore = searchCoreRef.current as SearchBoxCore & {
@@ -89,6 +90,14 @@ export function SearchPill({
     onSearchClear()
     sessionTokenRef.current = crypto.randomUUID()
   }, [onSearchClear])
+
+  const clearTypedQuery = useCallback(() => {
+    setSuggestions([])
+    setHighlightedSuggestionId(null)
+    onQueryChange('')
+    sessionTokenRef.current = crypto.randomUUID()
+    requestAnimationFrame(() => inputRef.current?.focus())
+  }, [onQueryChange])
 
   useEffect(() => {
     if (!isOpen || hasSelectedLocation) return
@@ -248,6 +257,10 @@ export function SearchPill({
     void handleSelect(selectedSuggestion)
   }, [activeSuggestionIndex, canRetrieveSuggestion, handleSelect, query, visibleSuggestions])
 
+  const handleClearButtonClick =
+    hasSelectedLocation ? clearSearch : hasTypedQuery ? clearTypedQuery : collapseSearch
+  const clearButtonLabel = hasSelectedLocation || hasTypedQuery ? 'Clear search' : 'Collapse search'
+
   return (
     <div className={cn('relative', fullWidth && 'w-full')}>
       <div className={cn(
@@ -309,8 +322,8 @@ export function SearchPill({
           />
 
           <button
-            onClick={hasSelectedLocation ? clearSearch : collapseSearch}
-            aria-label={hasSelectedLocation ? 'Clear selected location' : 'Collapse search'}
+            onClick={handleClearButtonClick}
+            aria-label={clearButtonLabel}
             className="flex items-center justify-center shrink-0 w-9 text-muted-foreground hover:text-foreground"
             style={{
               opacity: fullWidth
