@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { SearchBoxSuggestion } from '@mapbox/search-js-core'
+import type { NominatimSearchResult } from '../../../../components/map/searchTypes'
 import {
   buildAddressFallbackQuery,
   buildPartialAddressFallbackQuery,
@@ -10,27 +10,23 @@ import {
   resolvePrimaryThenOptionalFallback,
 } from '../../../../components/map/searchPillQuery'
 
-function makeSuggestion(mapboxId: string): SearchBoxSuggestion {
+function makeSuggestion(id: string): NominatimSearchResult {
   return {
-    name: mapboxId,
-    name_preferred: mapboxId,
-    mapbox_id: mapboxId,
-    feature_type: 'poi',
+    name: id,
+    namePreferred: id,
+    id,
+    placeId: id,
+    featureType: 'poi',
     address: '',
-    full_address: '',
-    place_formatted: '',
-    context: {} as SearchBoxSuggestion['context'],
-    language: 'en',
-    maki: 'marker',
-    poi_category: [],
-    brand: '',
-    brand_id: '',
-    external_ids: {},
-    metadata: {},
-    distance: 0,
-    eta: 0,
-    added_distance: 0,
-    added_time: 0,
+    fullAddress: '',
+    placeFormatted: '',
+    context: {},
+    lat: 0,
+    lng: 0,
+    category: '',
+    type: '',
+    importance: 0,
+    placeRank: null,
   }
 }
 
@@ -130,7 +126,7 @@ test('mergeSuggestions de-duplicates while preserving order', () => {
     5
   )
 
-  assert.deepEqual(merged.map(suggestion => suggestion.mapbox_id), ['a', 'b', 'c'])
+  assert.deepEqual(merged.map(suggestion => suggestion.id), ['a', 'b', 'c'])
 })
 
 test('mergeSuggestions respects the result limit', () => {
@@ -140,7 +136,7 @@ test('mergeSuggestions respects the result limit', () => {
     2
   )
 
-  assert.deepEqual(merged.map(suggestion => suggestion.mapbox_id), ['a', 'b'])
+  assert.deepEqual(merged.map(suggestion => suggestion.id), ['a', 'b'])
 })
 
 test('resolvePrimaryThenOptionalFallback returns both results when both succeed', async () => {
@@ -240,36 +236,36 @@ test('mergeSuggestionResults promotes fallback POIs that match the typed address
   const primary = [
     {
       ...makeSuggestion('address-1'),
-      feature_type: 'address',
+      featureType: 'address',
       address: '233 Winston Drive',
-      full_address: '233 Winston Drive, San Francisco, California 94132, United States',
+      fullAddress: '233 Winston Drive, San Francisco, California 94132, United States',
       name: '233 Winston Drive',
     },
     {
       ...makeSuggestion('address-2'),
-      feature_type: 'address',
+      featureType: 'address',
       address: '233 Willow Street',
-      full_address: '233 Willow Street, San Francisco, California 94109, United States',
+      fullAddress: '233 Willow Street, San Francisco, California 94109, United States',
       name: '233 Willow Street',
     },
-  ] as SearchBoxSuggestion[]
+  ] as NominatimSearchResult[]
 
   const fallback = [
     {
       ...makeSuggestion('poi-1'),
-      feature_type: 'poi',
+      featureType: 'poi',
       name: 'Starbucks',
       address: '233 Winston Drive',
-      full_address: '233 Winston Drive, San Francisco, California 94132, United States',
+      fullAddress: '233 Winston Drive, San Francisco, California 94132, United States',
     },
     {
       ...makeSuggestion('poi-2'),
-      feature_type: 'poi',
+      featureType: 'poi',
       name: 'Starbucks',
       address: '201 Mission Street',
-      full_address: '201 Mission Street, San Francisco, California 94105, United States',
+      fullAddress: '201 Mission Street, San Francisco, California 94105, United States',
     },
-  ] as SearchBoxSuggestion[]
+  ] as NominatimSearchResult[]
 
   const merged = mergeSuggestionResults(
     primary,
@@ -278,36 +274,36 @@ test('mergeSuggestionResults promotes fallback POIs that match the typed address
     5
   )
 
-  assert.deepEqual(merged.map(suggestion => suggestion.mapbox_id), ['poi-1', 'address-1', 'address-2', 'poi-2'])
+  assert.deepEqual(merged.map(suggestion => suggestion.id), ['poi-1', 'address-1', 'address-2', 'poi-2'])
 })
 
 test('mergeSuggestionResults requires an exact house-number match before promoting a fallback POI', () => {
   const primary = [
     {
       ...makeSuggestion('address-1'),
-      feature_type: 'address',
+      featureType: 'address',
       address: '150 Van Ness Avenue',
-      full_address: '150 Van Ness Avenue, San Francisco, California 94102, United States',
+      fullAddress: '150 Van Ness Avenue, San Francisco, California 94102, United States',
       name: '150 Van Ness Avenue',
     },
-  ] as SearchBoxSuggestion[]
+  ] as NominatimSearchResult[]
 
   const fallback = [
     {
       ...makeSuggestion('poi-1500'),
-      feature_type: 'poi',
+      featureType: 'poi',
       name: 'Starbucks',
       address: '1500 Van Ness Avenue',
-      full_address: '1500 Van Ness Avenue, San Francisco, California 94109, United States',
+      fullAddress: '1500 Van Ness Avenue, San Francisco, California 94109, United States',
     },
     {
       ...makeSuggestion('poi-150'),
-      feature_type: 'poi',
+      featureType: 'poi',
       name: 'Starbucks',
       address: '150 Van Ness Avenue',
-      full_address: '150 Van Ness Avenue, San Francisco, California 94102, United States',
+      fullAddress: '150 Van Ness Avenue, San Francisco, California 94102, United States',
     },
-  ] as SearchBoxSuggestion[]
+  ] as NominatimSearchResult[]
 
   const merged = mergeSuggestionResults(
     primary,
@@ -316,29 +312,29 @@ test('mergeSuggestionResults requires an exact house-number match before promoti
     5
   )
 
-  assert.deepEqual(merged.map(suggestion => suggestion.mapbox_id), ['poi-150', 'address-1', 'poi-1500'])
+  assert.deepEqual(merged.map(suggestion => suggestion.id), ['poi-150', 'address-1', 'poi-1500'])
 })
 
 test('mergeSuggestionResults skips promotion when fallback only matches locality tokens', () => {
   const primary = [
     {
       ...makeSuggestion('address-1'),
-      feature_type: 'address',
+      featureType: 'address',
       address: '150 Market Street',
-      full_address: '150 Market Street, San Francisco, California 94105, United States',
+      fullAddress: '150 Market Street, San Francisco, California 94105, United States',
       name: '150 Market Street',
     },
-  ] as SearchBoxSuggestion[]
+  ] as NominatimSearchResult[]
 
   const fallback = [
     {
       ...makeSuggestion('poi-1'),
-      feature_type: 'poi',
+      featureType: 'poi',
       name: 'Starbucks',
       address: '150 Market Street',
-      full_address: '150 Market Street, San Francisco, California 94105, United States',
+      fullAddress: '150 Market Street, San Francisco, California 94105, United States',
     },
-  ] as SearchBoxSuggestion[]
+  ] as NominatimSearchResult[]
 
   const merged = mergeSuggestionResults(
     primary,
@@ -351,29 +347,29 @@ test('mergeSuggestionResults skips promotion when fallback only matches locality
     5
   )
 
-  assert.deepEqual(merged.map(suggestion => suggestion.mapbox_id), ['address-1', 'poi-1'])
+  assert.deepEqual(merged.map(suggestion => suggestion.id), ['address-1', 'poi-1'])
 })
 
 test('mergeSuggestionResults ignores trailing locality tokens after a matched venue name', () => {
   const primary = [
     {
       ...makeSuggestion('address-1'),
-      feature_type: 'address',
+      featureType: 'address',
       address: '150 Market Street',
-      full_address: '150 Market Street, San Francisco, California 94105, United States',
+      fullAddress: '150 Market Street, San Francisco, California 94105, United States',
       name: '150 Market Street',
     },
-  ] as SearchBoxSuggestion[]
+  ] as NominatimSearchResult[]
 
   const fallback = [
     {
       ...makeSuggestion('poi-1'),
-      feature_type: 'poi',
+      featureType: 'poi',
       name: 'Starbucks',
       address: '150 Market Street',
-      full_address: '150 Market Street, San Francisco, California 94105, United States',
+      fullAddress: '150 Market Street, San Francisco, California 94105, United States',
     },
-  ] as SearchBoxSuggestion[]
+  ] as NominatimSearchResult[]
 
   const merged = mergeSuggestionResults(
     primary,
@@ -386,29 +382,29 @@ test('mergeSuggestionResults ignores trailing locality tokens after a matched ve
     5
   )
 
-  assert.deepEqual(merged.map(suggestion => suggestion.mapbox_id), ['poi-1', 'address-1'])
+  assert.deepEqual(merged.map(suggestion => suggestion.id), ['poi-1', 'address-1'])
 })
 
 test('mergeSuggestionResults promotes POIs for street names that include street-type abbreviations', () => {
   const primary = [
     {
       ...makeSuggestion('address-1'),
-      feature_type: 'address',
+      featureType: 'address',
       address: '150 St John Street',
-      full_address: '150 St John Street, San Jose, California 95113, United States',
+      fullAddress: '150 St John Street, San Jose, California 95113, United States',
       name: '150 St John Street',
     },
-  ] as SearchBoxSuggestion[]
+  ] as NominatimSearchResult[]
 
   const fallback = [
     {
       ...makeSuggestion('poi-1'),
-      feature_type: 'poi',
+      featureType: 'poi',
       name: 'Starbucks',
       address: '150 St John Street',
-      full_address: '150 St John Street, San Jose, California 95113, United States',
+      fullAddress: '150 St John Street, San Jose, California 95113, United States',
     },
-  ] as SearchBoxSuggestion[]
+  ] as NominatimSearchResult[]
 
   const merged = mergeSuggestionResults(
     primary,
@@ -421,5 +417,5 @@ test('mergeSuggestionResults promotes POIs for street names that include street-
     5
   )
 
-  assert.deepEqual(merged.map(suggestion => suggestion.mapbox_id), ['poi-1', 'address-1'])
+  assert.deepEqual(merged.map(suggestion => suggestion.id), ['poi-1', 'address-1'])
 })

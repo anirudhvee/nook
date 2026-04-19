@@ -1,16 +1,16 @@
-import type { SearchBoxSuggestion } from '@mapbox/search-js-core'
+import type { NominatimSearchResult } from './searchTypes'
 import { normalizeSearchText } from './searchPillMatch'
 
 function readSuggestionText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-export function getSuggestionSubtitle(suggestion: SearchBoxSuggestion): string | null {
+export function getSuggestionSubtitle(suggestion: NominatimSearchResult): string | null {
   const name = readSuggestionText(suggestion.name)
-  const preferredName = readSuggestionText(suggestion.name_preferred)
+  const preferredName = readSuggestionText(suggestion.namePreferred)
   const address = readSuggestionText(suggestion.address)
-  const fullAddress = readSuggestionText(suggestion.full_address)
-  const placeFormatted = readSuggestionText(suggestion.place_formatted)
+  const fullAddress = readSuggestionText(suggestion.fullAddress)
+  const placeFormatted = readSuggestionText(suggestion.placeFormatted)
 
   const normalizedNames = new Set(
     [name, preferredName]

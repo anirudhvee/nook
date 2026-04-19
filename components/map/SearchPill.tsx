@@ -2,20 +2,12 @@
 
 import { useRef, useState, useCallback, useEffect, useId, useMemo } from 'react'
 import { Search, X, ArrowLeft } from 'lucide-react'
-import { SearchBoxCore } from '@mapbox/search-js-core'
-import type { SearchBoxSuggestion } from '@mapbox/search-js-core'
 import { LogoWordmark } from '@/components/LogoWordmark'
 import { cn } from '@/lib/utils'
 import { findDirectMatchSuggestion } from './searchPillMatch'
-import {
-  buildSuggestionFallback,
-  mergeSuggestionResults,
-  mergeSuggestions,
-  resolvePrimaryThenOptionalFallback,
-} from './searchPillQuery'
 import { getSuggestionSubtitle } from './searchPillSuggestionText'
+import type { NominatimSearchResult } from './searchTypes'
 
-const SEARCH_TYPES = 'place,poi,neighborhood,address,locality,district,region'
 const SUGGESTION_LIMIT = 5
 
 type SelectedLocation = {
@@ -51,12 +43,8 @@ export function SearchPill({
   onLocationSelect,
   userLocation,
 }: Props) {
-  const [suggestions, setSuggestions] = useState<SearchBoxSuggestion[]>([])
+  const [suggestions, setSuggestions] = useState<NominatimSearchResult[]>([])
   const [highlightedSuggestionId, setHighlightedSuggestionId] = useState<string | null>(null)
-  const searchCoreRef = useRef(
-    new SearchBoxCore({ accessToken: process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? '' })
-  )
-  const sessionTokenRef = useRef(crypto.randomUUID())
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const focusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -66,13 +54,6 @@ export function SearchPill({
   const hasSelectedLocation = selectedLocation !== null
   const hasTypedQuery = query.trim().length > 0
   const canShowSuggestions = isOpen && !hasSelectedLocation && query.trim().length >= 3
-  const canRetrieveSuggestion = useCallback((suggestion: SearchBoxSuggestion) => {
-    const searchCore = searchCoreRef.current as SearchBoxCore & {
-      canRetrieve?: (candidate: SearchBoxSuggestion) => boolean
-    }
-
-    return searchCore.canRetrieve ? searchCore.canRetrieve(suggestion) : true
-  }, [])
 
   const openSearch = useCallback(() => {
     onSearchOpen()
@@ -88,14 +69,12 @@ export function SearchPill({
     setSuggestions([])
     setHighlightedSuggestionId(null)
     onSearchClear()
-    sessionTokenRef.current = crypto.randomUUID()
   }, [onSearchClear])
 
   const clearTypedQuery = useCallback(() => {
     setSuggestions([])
     setHighlightedSuggestionId(null)
     onQueryChange('')
-    sessionTokenRef.current = crypto.randomUUID()
     requestAnimationFrame(() => inputRef.current?.focus())
   }, [onQueryChange])
 
@@ -122,40 +101,23 @@ export function SearchPill({
     }
 
     const requestId = ++suggestionRequestIdRef.current
-    const fallback = buildSuggestionFallback(q)
-
     try {
-      const requestOptions = {
-        sessionToken: sessionTokenRef.current,
-        proximity: loc ? { lng: loc[0], lat: loc[1] } : 'ip',
-        language: 'en' as const,
-        limit: SUGGESTION_LIMIT,
-        types: SEARCH_TYPES,
+      const params = new URLSearchParams({
+        q,
+        limit: String(SUGGESTION_LIMIT),
+      })
+      if (loc) {
+        params.set('lat', String(loc[1]))
+        params.set('lng', String(loc[0]))
       }
-      const primaryPromise = searchCoreRef.current.suggest(q, requestOptions)
-      const fallbackPromise = fallback
-        ? searchCoreRef.current.suggest(fallback.query, requestOptions)
-        : null
-      const [primaryResponse, fallbackResponse] = await resolvePrimaryThenOptionalFallback(
-        primaryPromise,
-        fallbackPromise,
-        primaryResult => {
-          if (requestId !== suggestionRequestIdRef.current) return
-          setSuggestions(primaryResult.suggestions)
-        }
-      )
+
+      const response = await fetch(`/api/nooks?${params.toString()}`)
+      if (!response.ok) throw new Error('suggestion request failed')
+      const payload = (await response.json()) as {
+        suggestions?: NominatimSearchResult[]
+      }
       if (requestId !== suggestionRequestIdRef.current) return
-      if (!fallbackResponse) return
-      setSuggestions(
-        fallback
-          ? mergeSuggestionResults(
-              primaryResponse.suggestions,
-              fallbackResponse.suggestions,
-              fallback,
-              SUGGESTION_LIMIT
-            )
-          : mergeSuggestions(primaryResponse.suggestions, fallbackResponse.suggestions, SUGGESTION_LIMIT)
-      )
+      setSuggestions(payload.suggestions ?? [])
     } catch {
       if (requestId !== suggestionRequestIdRef.current) return
       setSuggestions([])
@@ -188,20 +150,11 @@ export function SearchPill({
     onQueryChange(e.target.value)
   }, [hasSelectedLocation, onQueryChange, onSelectedLocationEditStart])
 
-  const handleSelect = useCallback(async (suggestion: SearchBoxSuggestion) => {
-    try {
-      const retrieved = await searchCoreRef.current.retrieve(suggestion, {
-        sessionToken: sessionTokenRef.current,
-      })
-      const coords = retrieved.features[0]?.geometry?.coordinates as [number, number] | undefined
-      if (!coords) return
-      const [lng, lat] = coords
-      onQueryChange(suggestion.name)
-      setSuggestions([])
-      setHighlightedSuggestionId(null)
-      onLocationSelect(lng, lat, suggestion.name)
-      sessionTokenRef.current = crypto.randomUUID()
-    } catch {}
+  const handleSelect = useCallback((suggestion: NominatimSearchResult) => {
+    onQueryChange(suggestion.name)
+    setSuggestions([])
+    setHighlightedSuggestionId(null)
+    onLocationSelect(suggestion.lng, suggestion.lat, suggestion.name)
   }, [onLocationSelect, onQueryChange])
 
   const visibleSuggestions = useMemo(() => {
@@ -215,14 +168,14 @@ export function SearchPill({
   const highlightedSuggestionIndex = useMemo(() => {
     if (!highlightedSuggestionId) return -1
 
-    return visibleSuggestions.findIndex(suggestion => suggestion.mapbox_id === highlightedSuggestionId)
+    return visibleSuggestions.findIndex(suggestion => suggestion.id === highlightedSuggestionId)
   }, [highlightedSuggestionId, visibleSuggestions])
 
   const activeSuggestionIndex =
     highlightedSuggestionIndex >= 0
       ? highlightedSuggestionIndex
       : directMatchSuggestion
-        ? visibleSuggestions.findIndex(suggestion => suggestion.mapbox_id === directMatchSuggestion.mapbox_id)
+        ? visibleSuggestions.findIndex(suggestion => suggestion.id === directMatchSuggestion.id)
         : -1
 
   const handleInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -231,7 +184,7 @@ export function SearchPill({
     if (e.key === 'ArrowDown') {
       e.preventDefault()
       const nextIndex = activeSuggestionIndex >= 0 ? (activeSuggestionIndex + 1) % visibleSuggestions.length : 0
-      setHighlightedSuggestionId(visibleSuggestions[nextIndex]?.mapbox_id ?? null)
+      setHighlightedSuggestionId(visibleSuggestions[nextIndex]?.id ?? null)
       return
     }
 
@@ -241,21 +194,21 @@ export function SearchPill({
         activeSuggestionIndex >= 0
           ? (activeSuggestionIndex - 1 + visibleSuggestions.length) % visibleSuggestions.length
           : visibleSuggestions.length - 1
-      setHighlightedSuggestionId(visibleSuggestions[nextIndex]?.mapbox_id ?? null)
+      setHighlightedSuggestionId(visibleSuggestions[nextIndex]?.id ?? null)
       return
     }
 
     if (e.key !== 'Enter') return
 
-    const directMatch = findDirectMatchSuggestion(query, visibleSuggestions, canRetrieveSuggestion)
+    const directMatch = findDirectMatchSuggestion(query, visibleSuggestions)
     const selectedSuggestion =
       activeSuggestionIndex >= 0 ? visibleSuggestions[activeSuggestionIndex] : directMatch
 
-    if (!selectedSuggestion || !canRetrieveSuggestion(selectedSuggestion)) return
+    if (!selectedSuggestion) return
 
     e.preventDefault()
-    void handleSelect(selectedSuggestion)
-  }, [activeSuggestionIndex, canRetrieveSuggestion, handleSelect, query, visibleSuggestions])
+    handleSelect(selectedSuggestion)
+  }, [activeSuggestionIndex, handleSelect, query, visibleSuggestions])
 
   const handleClearButtonClick =
     hasSelectedLocation ? clearSearch : hasTypedQuery ? clearTypedQuery : collapseSearch
@@ -353,11 +306,11 @@ export function SearchPill({
             return (
               <button
                 id={`${listboxId}-option-${i}`}
-                key={s.mapbox_id}
+                key={s.id}
                 role="option"
                 aria-selected={activeSuggestionIndex === i}
                 onClick={() => handleSelect(s)}
-                onMouseEnter={() => setHighlightedSuggestionId(s.mapbox_id)}
+                onMouseEnter={() => setHighlightedSuggestionId(s.id)}
                 className={cn(
                   'w-full text-left px-4 py-2.5 transition-colors',
                   activeSuggestionIndex === i ? 'bg-muted' : 'hover:bg-muted',

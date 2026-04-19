@@ -1,4 +1,4 @@
-import type { SearchBoxSuggestion } from '@mapbox/search-js-core'
+import type { NominatimSearchResult } from './searchTypes'
 import { normalizeSearchText } from './searchPillMatch'
 import { findStreetTypeIndex } from './searchPillTokens'
 
@@ -186,8 +186,8 @@ export async function resolvePrimaryThenOptionalFallback<T>(
   return [primary, fallback]
 }
 
-function getSuggestionAddressCandidates(suggestion: SearchBoxSuggestion): string[] {
-  const fullAddress = typeof suggestion.full_address === 'string' ? suggestion.full_address : ''
+function getSuggestionAddressCandidates(suggestion: NominatimSearchResult): string[] {
+  const fullAddress = typeof suggestion.fullAddress === 'string' ? suggestion.fullAddress : ''
   const primaryAddress = fullAddress.split(',')[0] ?? ''
 
   return [
@@ -196,11 +196,10 @@ function getSuggestionAddressCandidates(suggestion: SearchBoxSuggestion): string
   ].filter(Boolean)
 }
 
-function getSuggestionNameCandidates(suggestion: SearchBoxSuggestion): string[] {
+function getSuggestionNameCandidates(suggestion: NominatimSearchResult): string[] {
   return [
     typeof suggestion.name === 'string' ? suggestion.name : '',
-    typeof suggestion.name_preferred === 'string' ? suggestion.name_preferred : '',
-    typeof suggestion.brand === 'string' ? suggestion.brand : '',
+    typeof suggestion.namePreferred === 'string' ? suggestion.namePreferred : '',
   ].filter(Boolean)
 }
 
@@ -214,8 +213,8 @@ function matchesAddressToken(queryToken: string, candidateToken: string, index: 
   return candidateToken.startsWith(queryToken)
 }
 
-function matchesAddressTokens(suggestion: SearchBoxSuggestion, addressTokens: string[]): boolean {
-  if (suggestion.feature_type !== 'poi' || addressTokens.length === 0) return false
+function matchesAddressTokens(suggestion: NominatimSearchResult, addressTokens: string[]): boolean {
+  if (suggestion.featureType !== 'poi' || addressTokens.length === 0) return false
 
   return getSuggestionAddressCandidates(suggestion).some(candidate => {
     const candidateTokens = normalizeSearchText(candidate).split(' ').filter(Boolean)
@@ -227,7 +226,7 @@ function matchesAddressTokens(suggestion: SearchBoxSuggestion, addressTokens: st
   })
 }
 
-function matchesPromotionTokens(suggestion: SearchBoxSuggestion, promotionTokens: string[]): boolean {
+function matchesPromotionTokens(suggestion: NominatimSearchResult, promotionTokens: string[]): boolean {
   if (promotionTokens.length === 0) return true
 
   return getSuggestionNameCandidates(suggestion).some(candidate => {
@@ -247,14 +246,14 @@ function matchesPromotionTokens(suggestion: SearchBoxSuggestion, promotionTokens
   })
 }
 
-function combineSuggestions(groups: SearchBoxSuggestion[][], limit: number): SearchBoxSuggestion[] {
-  const merged: SearchBoxSuggestion[] = []
+function combineSuggestions(groups: NominatimSearchResult[][], limit: number): NominatimSearchResult[] {
+  const merged: NominatimSearchResult[] = []
   const seen = new Set<string>()
 
   for (const group of groups) {
     for (const suggestion of group) {
-      if (seen.has(suggestion.mapbox_id)) continue
-      seen.add(suggestion.mapbox_id)
+      if (seen.has(suggestion.id)) continue
+      seen.add(suggestion.id)
       merged.push(suggestion)
       if (merged.length >= limit) return merged
     }
@@ -264,11 +263,11 @@ function combineSuggestions(groups: SearchBoxSuggestion[][], limit: number): Sea
 }
 
 export function mergeSuggestionResults(
-  primary: SearchBoxSuggestion[],
-  secondary: SearchBoxSuggestion[],
+  primary: NominatimSearchResult[],
+  secondary: NominatimSearchResult[],
   fallback: SuggestionFallback,
   limit: number
-): SearchBoxSuggestion[] {
+): NominatimSearchResult[] {
   const promotedFallback = secondary.filter(suggestion => {
     return (
       matchesAddressTokens(suggestion, fallback.addressTokens)
@@ -285,9 +284,9 @@ export function mergeSuggestionResults(
 }
 
 export function mergeSuggestions(
-  primary: SearchBoxSuggestion[],
-  secondary: SearchBoxSuggestion[],
+  primary: NominatimSearchResult[],
+  secondary: NominatimSearchResult[],
   limit: number
-): SearchBoxSuggestion[] {
+): NominatimSearchResult[] {
   return combineSuggestions([primary, secondary], limit)
 }
