@@ -4,7 +4,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import { useRef, useEffect, useLayoutEffect, useState, useCallback } from 'react'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
-import mapboxgl from 'mapbox-gl'
+import maplibregl from 'maplibre-gl'
 import {
   ChevronUp,
   ScanSearch,
@@ -51,7 +51,7 @@ const L_CLUSTER_COUNT = 'cluster-count'
 const RADIUS_CIRCLE_SRC = 'radius-circle'
 const RADIUS_CIRCLE_FILL = 'radius-circle-fill'
 const RADIUS_CIRCLE_LINE = 'radius-circle-line'
-// Moss-green hex matching --primary for Mapbox paint properties
+// Moss-green hex matching --primary for map paint properties
 const RADIUS_COLOR = '#4a7c3f'
 
 const COLOR_NORMAL = 'oklch(0.42 0.09 145)'
@@ -59,9 +59,253 @@ const COLOR_SELECTED = '#c4623a'
 const COLOR_PASSPORT = '#c4623a'
 
 const SIDEBAR_BOTTOM_PX = 16
-const MAPBOX_LOGO_SAFE_AREA_PX = 16
+const MAP_ATTRIBUTION_SAFE_AREA_PX = 16
 const PEEK_STRIP_HEIGHT_PX = 72
 const PANEL_STACK_GAP_PX = 8
+const DEFAULT_MAP_MIN_ZOOM = 1.08
+
+type GlobeProjectionData = {
+  clippingPlane: [number, number, number, number]
+  mainMatrix: number[] | Float32Array
+}
+
+type MapWithProjectionInternals = maplibregl.Map & {
+  transform?: {
+    getProjectionDataForCustomLayer?: (renderWorldCopies: boolean) => GlobeProjectionData
+    width: number
+    height: number
+  }
+}
+
+declare global {
+  interface Window {
+    __globeRim?: {
+      centerX: number
+      centerY: number
+      radius: number
+      plane: number[]
+      normalDotCenter: number
+    }
+  }
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
+
+function dot(a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }): number {
+  return a.x * b.x + a.y * b.y + a.z * b.z
+}
+
+function cross(a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) {
+  return {
+    x: a.y * b.z - a.z * b.y,
+    y: a.z * b.x - a.x * b.z,
+    z: a.x * b.y - a.y * b.x,
+  }
+}
+
+function normalizeVector(vector: { x: number; y: number; z: number }) {
+  const length = Math.hypot(vector.x, vector.y, vector.z) || 1
+  return {
+    x: vector.x / length,
+    y: vector.y / length,
+    z: vector.z / length,
+  }
+}
+
+function scaleVector(vector: { x: number; y: number; z: number }, factor: number) {
+  return {
+    x: vector.x * factor,
+    y: vector.y * factor,
+    z: vector.z * factor,
+  }
+}
+
+function addVectors(a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) {
+  return {
+    x: a.x + b.x,
+    y: a.y + b.y,
+    z: a.z + b.z,
+  }
+}
+
+function projectPoint(
+  point: { x: number; y: number; z: number },
+  matrix: ArrayLike<number>,
+  width: number,
+  height: number,
+): { x: number; y: number } | null {
+  const clipX = matrix[0] * point.x + matrix[4] * point.y + matrix[8] * point.z + matrix[12]
+  const clipY = matrix[1] * point.x + matrix[5] * point.y + matrix[9] * point.z + matrix[13]
+  const clipW = matrix[3] * point.x + matrix[7] * point.y + matrix[11] * point.z + matrix[15]
+
+  if (!clipW) return null
+
+  const ndcX = clipX / clipW
+  const ndcY = clipY / clipW
+
+  return {
+    x: (ndcX * 0.5 + 0.5) * width,
+    y: (-ndcY * 0.5 + 0.5) * height,
+  }
+}
+
+function fitCircle(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+  c: { x: number; y: number },
+): { x: number; y: number; radius: number } | null {
+  const determinant = 2 * (
+    a.x * (b.y - c.y) +
+    b.x * (c.y - a.y) +
+    c.x * (a.y - b.y)
+  )
+
+  if (Math.abs(determinant) < 1e-6) return null
+
+  const aSq = a.x * a.x + a.y * a.y
+  const bSq = b.x * b.x + b.y * b.y
+  const cSq = c.x * c.x + c.y * c.y
+
+  const centerX = (
+    aSq * (b.y - c.y) +
+    bSq * (c.y - a.y) +
+    cSq * (a.y - b.y)
+  ) / determinant
+
+  const centerY = (
+    aSq * (c.x - b.x) +
+    bSq * (a.x - c.x) +
+    cSq * (b.x - a.x)
+  ) / determinant
+
+  return {
+    x: centerX,
+    y: centerY,
+    radius: Math.hypot(a.x - centerX, a.y - centerY),
+  }
+}
+
+function syncProjectionDecorations(map: maplibregl.Map, root: HTMLElement) {
+  const projectionType = map.getProjection?.()?.type ?? 'globe'
+  const isGlobe = projectionType === 'globe'
+  document.body.classList.toggle('mercator-mode', !isGlobe)
+  if (!isGlobe) {
+    root.style.setProperty('--globe-rim-opacity', '0')
+  }
+}
+
+class ClosedCompactAttributionControl extends maplibregl.AttributionControl {
+  private allowOpen = false
+
+  // This intentionally hooks MapLibre internals that are not part of the public API.
+  // Re-verify this control against maplibre-gl upgrades before changing versions.
+  override _toggleAttribution = () => {
+    this.allowOpen = true
+    if (this._container.classList.contains('maplibregl-compact')) {
+      if (this._container.classList.contains('maplibregl-compact-show')) {
+        this._container.setAttribute('open', '')
+        this._container.classList.remove('maplibregl-compact-show')
+      } else {
+        this._container.classList.add('maplibregl-compact-show')
+        this._container.removeAttribute('open')
+      }
+    }
+  }
+
+  override _updateCompact = () => {
+    if (this._map.getCanvasContainer().offsetWidth <= 640 || this._compact) {
+      if (this._compact === false) {
+        this._container.setAttribute('open', '')
+      } else if (!this._container.classList.contains('maplibregl-compact') && !this._container.classList.contains('maplibregl-attrib-empty')) {
+        this._container.setAttribute('open', '')
+        this._container.classList.add('maplibregl-compact', 'maplibregl-compact-show')
+      }
+    } else {
+      this._container.setAttribute('open', '')
+      if (this._container.classList.contains('maplibregl-compact')) {
+        this._container.classList.remove('maplibregl-compact', 'maplibregl-compact-show')
+      }
+    }
+
+    if (this.allowOpen) return
+    if (!this._container.classList.contains('maplibregl-compact')) return
+    this._container.classList.remove('maplibregl-compact-show')
+    this._container.removeAttribute('open')
+  }
+}
+
+type GlobeStar = {
+  x: number
+  y: number
+  r: number
+  a: number
+}
+
+function createGlobeStars(): GlobeStar[] {
+  return [
+    ...Array.from({ length: 1800 }, () => ({
+      x: Math.random(),
+      y: Math.random(),
+      r: Math.random() * 0.4 + 0.12,
+      a: Math.random() * 0.14 + 0.06,
+    })),
+    ...Array.from({ length: 220 }, () => ({
+      x: Math.random(),
+      y: Math.random(),
+      r: Math.random() * 0.7 + 0.24,
+      a: Math.random() * 0.22 + 0.14,
+    })),
+  ]
+}
+
+function updateGlobeRim(map: maplibregl.Map, root: HTMLElement) {
+  if (map.getProjection?.()?.type !== 'globe') return
+
+  const mapWithInternals = map as MapWithProjectionInternals
+  const projectionData = mapWithInternals.transform?.getProjectionDataForCustomLayer?.(true)
+  const width = mapWithInternals.transform?.width
+  const height = mapWithInternals.transform?.height
+
+  if (!projectionData || !width || !height) return
+
+  const plane = projectionData.clippingPlane
+  const normal = normalizeVector({ x: plane[0], y: plane[1], z: plane[2] })
+  const center = {
+    x: -plane[0] * plane[3],
+    y: -plane[1] * plane[3],
+    z: -plane[2] * plane[3],
+  }
+  const radius3d = Math.sqrt(Math.max(0, 1 - plane[3] * plane[3]))
+  const axis = Math.abs(normal.z) < 0.9 ? { x: 0, y: 0, z: 1 } : { x: 0, y: 1, z: 0 }
+  const tangent = normalizeVector(cross(normal, axis))
+  const bitangent = normalizeVector(cross(normal, tangent))
+
+  const p1 = projectPoint(addVectors(center, scaleVector(tangent, radius3d)), projectionData.mainMatrix, width, height)
+  const p2 = projectPoint(addVectors(center, scaleVector(tangent, -radius3d)), projectionData.mainMatrix, width, height)
+  const p3 = projectPoint(addVectors(center, scaleVector(bitangent, radius3d)), projectionData.mainMatrix, width, height)
+  const circle = p1 && p2 && p3 ? fitCircle(p1, p2, p3) : null
+
+  if (!circle) return
+
+  const opacity = clamp(0.95 - Math.max(0, map.getZoom() - 2) * 0.17, 0.12, 0.95)
+
+  root.style.setProperty('--globe-rim-center-x', `${circle.x.toFixed(1)}px`)
+  root.style.setProperty('--globe-rim-center-y', `${circle.y.toFixed(1)}px`)
+  root.style.setProperty('--globe-rim-radius', `${circle.radius.toFixed(1)}px`)
+  root.style.setProperty('--globe-rim-opacity', opacity.toFixed(3))
+
+  if (process.env.NODE_ENV === 'development') {
+    window.__globeRim = {
+      centerX: circle.x,
+      centerY: circle.y,
+      radius: circle.radius,
+      plane: [...plane],
+      normalDotCenter: dot(normal, center),
+    }
+  }
+}
 
 const FILTERS: { id: FilterType; label: string }[] = [
   { id: 'all', label: 'all' },
@@ -155,7 +399,7 @@ function NookTypeIcon({ type, className }: { type: NookType; className?: string 
   }
 }
 
-function setMarkerColor(marker: mapboxgl.Marker, color: string) {
+function setMarkerColor(marker: maplibregl.Marker, color: string) {
   const path = marker.getElement().querySelector<SVGPathElement>('path')
   if (path) path.style.fill = color
 }
@@ -360,16 +604,21 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
   const pathname = usePathname()
   const isPassportOpen = isPassportPath(pathname)
   const urlSelectedNookId = getSelectedNookIdFromUrl(pathname)
+  const globeCanvasRef = useRef<HTMLCanvasElement>(null)
+  const globeStarsRef = useRef<GlobeStar[]>([])
+  if (globeStarsRef.current.length === 0) {
+    globeStarsRef.current = createGlobeStars()
+  }
   const mapContainerRef = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<mapboxgl.Map | null>(null)
+  const mapRef = useRef<maplibregl.Map | null>(null)
   const initialCenterRef = useRef<[number, number]>(initialCenter)
   const mapLoadedRef = useRef(false)
   const realUserLocRef = useRef<[number, number] | null>(null)
   const nearbyOriginRef = useRef<[number, number] | null>(null)
   const selectedSearchLocationRef = useRef<SearchLocation | null>(null)
   const nooksRef = useRef<NookPlace[]>([])
-  const pointMarkersRef = useRef<Map<string, mapboxgl.Marker>>(new Map())
-  const passportMarkersRef = useRef<mapboxgl.Marker[]>([])
+  const pointMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
+  const passportMarkersRef = useRef<maplibregl.Marker[]>([])
   const passportRotationRef = useRef<number | null>(null)
   const passportOpenRef = useRef(false)
   const passportCloseHandledRef = useRef(false)
@@ -384,9 +633,9 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
   const radiusMRef = useRef(DEFAULT_RADIUS_M)
   const geolocateIsAutoTriggerRef = useRef(false)
   const geoBtnPatchedRef = useRef(false)
-  const geolocateRef = useRef<mapboxgl.GeolocateControl | null>(null)
-  const attributionControlRef = useRef<mapboxgl.AttributionControl | null>(null)
-  const navigationControlRef = useRef<mapboxgl.NavigationControl | null>(null)
+  const geolocateRef = useRef<maplibregl.GeolocateControl | null>(null)
+  const attributionControlRef = useRef<maplibregl.AttributionControl | null>(null)
+  const navigationControlRef = useRef<maplibregl.NavigationControl | null>(null)
   const mobileAttributionAddedRef = useRef(false)
   const desktopControlsAddedRef = useRef(false)
   const bannerDismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -454,6 +703,43 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     if (viewportHeight > 0) return viewportHeight
     return Math.round(window.visualViewport?.height ?? window.innerHeight)
   }, [viewportHeight])
+
+  useEffect(() => {
+    const canvas = globeCanvasRef.current
+    if (!canvas) return
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    const drawStars = () => {
+      const width = window.innerWidth
+      const height = window.innerHeight
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      globeStarsRef.current.forEach(star => {
+        ctx.beginPath()
+        ctx.arc(star.x * width, star.y * height, star.r, 0, Math.PI * 2)
+        ctx.fillStyle = `rgba(226, 233, 240, ${star.a})`
+        ctx.fill()
+      })
+    }
+
+    const updateCanvasSize = () => {
+      const dpr = window.devicePixelRatio || 1
+      canvas.width = window.innerWidth * dpr
+      canvas.height = window.innerHeight * dpr
+      canvas.style.width = `${window.innerWidth}px`
+      canvas.style.height = `${window.innerHeight}px`
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      drawStars()
+    }
+
+    window.addEventListener('resize', updateCanvasSize)
+    updateCanvasSize()
+
+    return () => {
+      window.removeEventListener('resize', updateCanvasSize)
+    }
+  }, [])
 
   useEffect(() => {
     const map = mapRef.current
@@ -843,14 +1129,14 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     if (pins.length === 0) return
 
     for (const pin of pins) {
-      const marker = new mapboxgl.Marker({ color: COLOR_PASSPORT })
+      const marker = new maplibregl.Marker({ color: COLOR_PASSPORT })
         .setLngLat([pin.lng, pin.lat])
         .addTo(map)
       marker.getElement().style.cursor = 'pointer'
       passportMarkersRef.current.push(marker)
     }
 
-    const bounds = new mapboxgl.LngLatBounds()
+    const bounds = new maplibregl.LngLatBounds()
     for (const pin of pins) bounds.extend([pin.lng, pin.lat])
 
     const MOBILE_HEADER_H = MOBILE_SHEET_HEADER_H
@@ -868,7 +1154,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
 
     const sortedPins = [...pins].sort((a, b) => a.lng - b.lng)
     const avgLat = pins.reduce((s, p) => s + p.lat, 0) / pins.length
-    const GLOBE_ZOOM = isMobileRef.current ? 0.5 : 1.8
+    const GLOBE_ZOOM = isMobileRef.current ? DEFAULT_MAP_MIN_ZOOM : 1.8
     const DEG_PER_SEC = 18
 
     const globePadding = isMobileRef.current
@@ -915,7 +1201,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
       if (!mapRef.current || !passportOpenRef.current) return
       passportRotationRef.current = requestAnimationFrame(rotate)
     })
-  }, [clearPassportMarkers, hideNearbyMarkers, stopPassportRotation])
+  }, [clearPassportMarkers, getCurrentViewportHeight, hideNearbyMarkers, stopPassportRotation])
 
   const handlePassportClose = useCallback(() => {
     window.history.replaceState(null, '', '/')
@@ -1106,19 +1392,25 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     const startCenter = cachedCenter ?? initialCenterRef.current
     const startZoom = cachedCenter ? 14 : 10
 
-    mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? ''
-
-    const map = new mapboxgl.Map({
+    const root = document.documentElement
+    const map = new maplibregl.Map({
       container: mapContainerRef.current,
-      style: 'mapbox://styles/mapbox/outdoors-v12',
+      style: '/map-style.json',
       center: startCenter,
       zoom: startZoom,
+      minZoom: DEFAULT_MAP_MIN_ZOOM,
+      maxPitch: 0,
       attributionControl: false,
     })
+    const initialViewportHeight = Math.round(window.visualViewport?.height ?? window.innerHeight)
 
-    const attributionControl = new mapboxgl.AttributionControl({ compact: true })
+    const handleStyleData = () => {
+      syncProjectionDecorations(map, root)
+    }
+
+    const attributionControl = new ClosedCompactAttributionControl({ compact: true })
     attributionControlRef.current = attributionControl
-    const navigationControl = new mapboxgl.NavigationControl({ showCompass: false })
+    const navigationControl = new maplibregl.NavigationControl({ showCompass: false })
     navigationControlRef.current = navigationControl
     if (isMobileRef.current) {
       map.addControl(attributionControl, 'bottom-left')
@@ -1128,8 +1420,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
       map.addControl(navigationControl, 'bottom-right')
       desktopControlsAddedRef.current = true
     }
-
-    const geolocate = new mapboxgl.GeolocateControl({
+    const geolocate = new maplibregl.GeolocateControl({
       positionOptions: { enableHighAccuracy: true },
       trackUserLocation: false,
       showAccuracyCircle: false,
@@ -1171,7 +1462,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
       if (!geoBtnPatchedRef.current) {
         const geoBtn = map
           .getContainer()
-          .querySelector('.mapboxgl-ctrl-geolocate') as HTMLButtonElement | null
+          .querySelector('.maplibregl-ctrl-geolocate') as HTMLButtonElement | null
         if (geoBtn) {
           geoBtn.disabled = false
           geoBtn.style.opacity = '0.5'
@@ -1199,7 +1490,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
       const MOBILE_H = MOBILE_SHEET_HEADER_H
       map.setPadding({
         top: MOBILE_H,
-        bottom: Math.round(getMobileHalfVisibleHeight(getCurrentViewportHeight())),
+        bottom: Math.round(getMobileHalfVisibleHeight(initialViewportHeight)),
         left: 0,
         right: 0,
       })
@@ -1207,6 +1498,10 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
 
     map.on('load', () => {
       mapLoadedRef.current = true
+      map.setProjection({ type: 'globe' })
+      map.setSky({ 'atmosphere-blend': 0 })
+      syncProjectionDecorations(map, root)
+      updateGlobeRim(map, root)
 
       const cssVar = getComputedStyle(document.documentElement)
         .getPropertyValue('--primary')
@@ -1241,7 +1536,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
         filter: ['has', 'point_count'],
         layout: {
           'text-field': '{point_count_abbreviated}',
-          'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
+          'text-font': ['Noto Sans Regular'],
           'text-size': 13,
         },
         paint: { 'text-color': '#fff' },
@@ -1299,7 +1594,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
           const coords = (feature.geometry as unknown as { coordinates: [number, number] }).coordinates
           const color = id === selectedIdRef.current ? darkerPrimaryRef.current : primaryColorRef.current
 
-          const marker = new mapboxgl.Marker({ color })
+          const marker = new maplibregl.Marker({ color })
             .setLngLat(coords)
             .addTo(map)
 
@@ -1314,11 +1609,13 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
       }
 
       map.on('render', () => {
+        updateGlobeRim(map, root)
         if (mapLoadedRef.current) syncPointMarkers()
       })
+      map.on('styledata', handleStyleData)
 
       if (nooksRef.current.length > 0) {
-        ;(map.getSource(SRC) as mapboxgl.GeoJSONSource).setData(toGeoJSON(nooksRef.current))
+        ;(map.getSource(SRC) as maplibregl.GeoJSONSource).setData(toGeoJSON(nooksRef.current))
       }
 
       map.on('click', L_CLUSTERS, e => {
@@ -1328,12 +1625,12 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
         const clusterId = feature.properties?.cluster_id as number
         const coords = (feature.geometry as unknown as { coordinates: [number, number] }).coordinates
 
-        ;(map.getSource(SRC) as mapboxgl.GeoJSONSource).getClusterExpansionZoom(
-          clusterId,
-          (err, zoom) => {
-            if (!err && zoom != null) map.easeTo({ center: coords, zoom })
-          }
-        )
+        void (map.getSource(SRC) as maplibregl.GeoJSONSource)
+          .getClusterExpansionZoom(clusterId)
+          .then(zoom => {
+            map.easeTo({ center: coords, zoom })
+          })
+          .catch(() => {})
       })
 
       map.on('mouseenter', L_CLUSTERS, () => {
@@ -1355,6 +1652,11 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     const pointMarkers = pointMarkersRef.current
 
     return () => {
+      document.body.classList.remove('mercator-mode')
+      root.style.removeProperty('--globe-rim-center-x')
+      root.style.removeProperty('--globe-rim-center-y')
+      root.style.removeProperty('--globe-rim-radius')
+      root.style.removeProperty('--globe-rim-opacity')
       pointMarkers.forEach(marker => marker.remove())
       pointMarkers.clear()
       map.remove()
@@ -1372,7 +1674,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     pointMarkersRef.current.forEach(marker => marker.remove())
     pointMarkersRef.current.clear()
 
-    ;(map.getSource(SRC) as mapboxgl.GeoJSONSource)?.setData(toGeoJSON(mapNooks))
+    ;(map.getSource(SRC) as maplibregl.GeoJSONSource)?.setData(toGeoJSON(mapNooks))
     syncSelectedNookFromUrl(urlSelectedNookId)
   }, [mapNooks, syncSelectedNookFromUrl, urlSelectedNookId])
 
@@ -1412,7 +1714,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     const map = mapRef.current
     if (!map || !mapLoadedRef.current) return
 
-    const src = map.getSource(RADIUS_CIRCLE_SRC) as mapboxgl.GeoJSONSource | undefined
+    const src = map.getSource(RADIUS_CIRCLE_SRC) as maplibregl.GeoJSONSource | undefined
     if (!src) return
 
     if (!isRadiusActive) {
@@ -1451,7 +1753,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
   }, [radiusM, isRadiusActive, filter, loadNearbyPlaces, loadSearchedPlaces])
 
   const searchBiasLocation = realUserLoc ?? nearbyOrigin
-  const leftStackBottomPx = SIDEBAR_BOTTOM_PX + MAPBOX_LOGO_SAFE_AREA_PX
+  const leftStackBottomPx = SIDEBAR_BOTTOM_PX + MAP_ATTRIBUTION_SAFE_AREA_PX
   const nearbyPanelHeight = (isSearchOpen || isPassportOpen)
     ? `${PEEK_STRIP_HEIGHT_PX}px`
     : `calc(100vh - 72px - ${leftStackBottomPx}px)`
@@ -1489,9 +1791,11 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
   }, [collapseSearch, isSearchOpen, isSearchPeekState, mobileSheetContent, mobileSheetSnap, selectedSearchLocation])
 
   return (
-    <div className="h-dvh w-screen relative overflow-hidden overscroll-none">
+    <div className="nook-map-surface h-dvh w-screen relative overflow-hidden overscroll-none">
       <div className="absolute inset-0">
-        <div ref={mapContainerRef} className="w-full h-full" />
+        <canvas ref={globeCanvasRef} id="nook-map-stars" aria-hidden="true" />
+        <div id="nook-globe-rim" aria-hidden="true" />
+        <div ref={mapContainerRef} className="nook-map-container relative z-[2] w-full h-full" />
       </div>
 
       {isMobile && (

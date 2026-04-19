@@ -1,4 +1,4 @@
-import type { SearchBoxSuggestion } from '@mapbox/search-js-core'
+import type { SearchSuggestion } from './searchTypes'
 import { getCanonicalStreetType } from './searchPillTokens'
 
 const DIRECTION_TOKENS: Record<string, string> = {
@@ -38,8 +38,8 @@ function getNormalizedTokens(value: string): string[] {
   return normalizeSearchText(value).split(' ').filter(Boolean)
 }
 
-function getSuggestionCandidates(suggestion: SearchBoxSuggestion): string[] {
-  const fullAddress = readSuggestionText(suggestion.full_address)
+function getSuggestionCandidates(suggestion: SearchSuggestion): string[] {
+  const fullAddress = readSuggestionText(suggestion.fullAddress)
   const primaryAddress = fullAddress.split(',')[0] ?? ''
 
   return [
@@ -47,29 +47,29 @@ function getSuggestionCandidates(suggestion: SearchBoxSuggestion): string[] {
     primaryAddress,
     fullAddress,
     readSuggestionText(suggestion.name),
-    readSuggestionText(suggestion.name_preferred),
-    readSuggestionText(suggestion.place_formatted),
+    readSuggestionText(suggestion.namePreferred),
+    readSuggestionText(suggestion.placeFormatted),
   ].filter(Boolean)
 }
 
-function getAddressCandidates(suggestion: SearchBoxSuggestion): string[] {
-  const fullAddress = readSuggestionText(suggestion.full_address)
+function getAddressCandidates(suggestion: SearchSuggestion): string[] {
+  const fullAddress = readSuggestionText(suggestion.fullAddress)
   const primaryAddress = fullAddress.split(',')[0] ?? ''
 
   return [
     readSuggestionText(suggestion.address),
     primaryAddress,
-    readSuggestionText(suggestion.name_preferred),
+    readSuggestionText(suggestion.namePreferred),
     readSuggestionText(suggestion.name),
   ].filter(Boolean)
 }
 
-function getSuggestionContextTerms(suggestion: SearchBoxSuggestion): string[] {
+function getSuggestionContextTerms(suggestion: SearchSuggestion): string[] {
   const context = suggestion.context
 
   return [
-    readSuggestionText(suggestion.place_formatted),
-    readSuggestionText(suggestion.full_address),
+    readSuggestionText(suggestion.placeFormatted),
+    readSuggestionText(suggestion.fullAddress),
     readSuggestionText(context.country?.name),
     readSuggestionText(context.country?.country_code),
     readSuggestionText(context.country?.country_code_alpha_3),
@@ -90,7 +90,7 @@ function isPrefixMatch(queryTokens: string[], candidateTokens: string[]): boolea
   return candidateTokens.every((token, index) => queryTokens[index] === token)
 }
 
-function matchesContextTerms(extraTokens: string[], suggestion: SearchBoxSuggestion): boolean {
+function matchesContextTerms(extraTokens: string[], suggestion: SearchSuggestion): boolean {
   if (extraTokens.length === 0) return true
 
   const contextTerms = getSuggestionContextTerms(suggestion)
@@ -105,7 +105,7 @@ function matchesContextTerms(extraTokens: string[], suggestion: SearchBoxSuggest
   })
 }
 
-export function isDirectMatch(query: string, suggestion: SearchBoxSuggestion): boolean {
+export function isDirectMatch(query: string, suggestion: SearchSuggestion): boolean {
   const normalizedQuery = normalizeSearchText(query)
   if (!normalizedQuery) return false
 
@@ -128,10 +128,7 @@ export function isDirectMatch(query: string, suggestion: SearchBoxSuggestion): b
 
 export function findDirectMatchSuggestion(
   query: string,
-  suggestions: SearchBoxSuggestion[],
-  canRetrieve: (suggestion: SearchBoxSuggestion) => boolean = () => true
-): SearchBoxSuggestion | null {
-  return suggestions.find(suggestion => {
-    return canRetrieve(suggestion) && isDirectMatch(query, suggestion)
-  }) ?? null
+  suggestions: SearchSuggestion[]
+): SearchSuggestion | null {
+  return suggestions.find(suggestion => isDirectMatch(query, suggestion)) ?? null
 }

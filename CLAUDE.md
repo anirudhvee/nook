@@ -16,7 +16,7 @@ A web-first app for finding places to work from — cafés, libraries, hotel lob
 | Language | TypeScript |
 | Styling | Tailwind CSS + shadcn/ui |
 | Database + Auth | Supabase (Postgres + Supabase Auth — Google OAuth + email magic link, no passwords) |
-| Maps rendering | Mapbox GL JS |
+| Maps rendering | MapLibre GL JS |
 | Venue data | Google Places API |
 | Review data | Google Places API (New) — `reviewSummary`, `generativeSummary`, `reviews` |
 | AI | OpenAI API (gpt-4o-mini) |
@@ -49,11 +49,10 @@ nook/
 │       └── ai/           # OpenAI work-signal parsing + Supabase cache
 ├── components/           # Shared UI components
 │   ├── ui/               # shadcn/ui primitives (do not edit directly)
-│   ├── map/              # Mapbox components
+│   ├── map/              # Map components
 │   └── nook/             # Nook-specific components (NookDetailPanel, Navbar, etc.)
 ├── lib/                  # Utilities and clients
 │   ├── supabase.ts       # Supabase client (browser, server, service-role)
-│   ├── mapbox.ts         # Mapbox helpers
 │   └── utils.ts          # cn() and other shared utilities
 ├── tests/                # Ad hoc unit tests until a full test runner is wired up
 │   └── unit/             # Lightweight logic tests (currently node:test + tsc)
@@ -75,7 +74,7 @@ nook/
 
 ## Key Features (build in this order)
 
-1. **Discovery map** — Mapbox map showing nearby nooks, filterable by type (café, library, coworking, other)
+1. **Discovery map** — MapLibre map showing nearby nooks, filterable by type (café, library, coworking, other)
 2. **Nook detail page** — WiFi quality, outlet availability, noise level, hours, laptop-friendliness, AI-parsed review highlights
 3. **Passport** — Stamp collection of places the user has worked from (Flighty-style)
 4. **Share** — "I'm working from [Nook] today" shareable card
@@ -112,7 +111,6 @@ There is **not yet** a standardized `npm test` script on `main`; current lightwe
 ## Environment Variables
 
 ```
-NEXT_PUBLIC_MAPBOX_TOKEN=
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
@@ -205,9 +203,9 @@ laptop-friendly | not laptop-friendly
 - **Never hardcode API keys.** Always use environment variables.
 - **Use `/compact`** if the session context gets long. Start a new session between features.
 - Do not build end-user venue submission flows on `main` unless the product direction changes. Discovery should stay anchored to Google Places nearby results, with Nook-specific metadata layered on by `place_id`.
-- The Mapbox style should use warm earth tones — reference the Mapbox Studio "Outdoors" style as a base.
+- The map style should use warm earth tones and preserve Nook's custom globe presentation.
 - Google Places API (New) `nearbySearch` is the primary endpoint for finding nooks. Filter by `type`: `cafe`, `library`, `lodging`.
 - Google Places API (New) detail endpoint fields in use: `displayName`, `formattedAddress`, `addressComponents`, `rating`, `types`, `regularOpeningHours`, `reviewSummary`, `generativeSummary`, `reviews`.
 - gpt-4o-mini parses reviews and stores signals + summary in `work_signals`. Do not re-parse on every page load.
 - Always check `work_signals` cache before calling OpenAI. See cache behaviour above for TTL and retry rules.
-- `components/map/searchPillMatch.ts` contains the direct-enter Mapbox matching logic; keep that logic generic and data-driven, never hardcode special-case addresses.
+- `components/map/searchPillMatch.ts` contains the direct-enter search matching logic; keep that logic generic and data-driven, never hardcode special-case addresses.

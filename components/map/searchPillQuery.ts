@@ -1,6 +1,6 @@
-import type { SearchBoxSuggestion } from '@mapbox/search-js-core'
-import { normalizeSearchText } from './searchPillMatch'
-import { findStreetTypeIndex } from './searchPillTokens'
+import { normalizeSearchText } from '@/components/map/searchPillMatch'
+import { findStreetTypeIndex } from '@/components/map/searchPillTokens'
+import type { SearchSuggestion } from '@/components/map/searchTypes'
 
 export type SuggestionFallback = {
   addressTokens: string[]
@@ -41,36 +41,26 @@ function looksLikeStreetNameAbbreviation(tokens: string[], streetTypeIndex: numb
 function findAddressSegment(tokens: string[]): AddressSegment | null {
   const searchStartIndex = 0
 
-  while (searchStartIndex < tokens.length) {
-    let streetTypeIndex = findStreetTypeIndex(tokens, searchStartIndex)
-    if (streetTypeIndex < 0) return null
+  if (searchStartIndex >= tokens.length) return null
 
-    while (streetTypeIndex >= 0) {
-      let shouldContinue = false
+  let streetTypeIndex = findStreetTypeIndex(tokens, searchStartIndex)
+  if (streetTypeIndex < 0) return null
 
-      for (let tokenIndex = streetTypeIndex - 1; tokenIndex >= searchStartIndex; tokenIndex -= 1) {
-        if (isHouseNumberToken(tokens[tokenIndex] ?? '')) {
-          if (looksLikeStreetNameAbbreviation(tokens, streetTypeIndex)) {
-            shouldContinue = true
-            break
-          }
+  while (streetTypeIndex >= 0) {
+    for (let tokenIndex = streetTypeIndex - 1; tokenIndex >= searchStartIndex; tokenIndex -= 1) {
+      if (isHouseNumberToken(tokens[tokenIndex] ?? '')) {
+        if (looksLikeStreetNameAbbreviation(tokens, streetTypeIndex)) {
+          break
+        }
 
-          return {
-            houseNumberIndex: tokenIndex,
-            streetTypeIndex,
-          }
+        return {
+          houseNumberIndex: tokenIndex,
+          streetTypeIndex,
         }
       }
-
-      if (shouldContinue) {
-        streetTypeIndex = findStreetTypeIndex(tokens, streetTypeIndex + 1)
-        continue
-      }
-
-      streetTypeIndex = findStreetTypeIndex(tokens, streetTypeIndex + 1)
     }
 
-    return null
+    streetTypeIndex = findStreetTypeIndex(tokens, streetTypeIndex + 1)
   }
 
   return null
@@ -186,8 +176,8 @@ export async function resolvePrimaryThenOptionalFallback<T>(
   return [primary, fallback]
 }
 
-function getSuggestionAddressCandidates(suggestion: SearchBoxSuggestion): string[] {
-  const fullAddress = typeof suggestion.full_address === 'string' ? suggestion.full_address : ''
+function getSuggestionAddressCandidates(suggestion: SearchSuggestion): string[] {
+  const fullAddress = typeof suggestion.fullAddress === 'string' ? suggestion.fullAddress : ''
   const primaryAddress = fullAddress.split(',')[0] ?? ''
 
   return [
@@ -196,11 +186,10 @@ function getSuggestionAddressCandidates(suggestion: SearchBoxSuggestion): string
   ].filter(Boolean)
 }
 
-function getSuggestionNameCandidates(suggestion: SearchBoxSuggestion): string[] {
+function getSuggestionNameCandidates(suggestion: SearchSuggestion): string[] {
   return [
     typeof suggestion.name === 'string' ? suggestion.name : '',
-    typeof suggestion.name_preferred === 'string' ? suggestion.name_preferred : '',
-    typeof suggestion.brand === 'string' ? suggestion.brand : '',
+    typeof suggestion.namePreferred === 'string' ? suggestion.namePreferred : '',
   ].filter(Boolean)
 }
 
@@ -214,8 +203,8 @@ function matchesAddressToken(queryToken: string, candidateToken: string, index: 
   return candidateToken.startsWith(queryToken)
 }
 
-function matchesAddressTokens(suggestion: SearchBoxSuggestion, addressTokens: string[]): boolean {
-  if (suggestion.feature_type !== 'poi' || addressTokens.length === 0) return false
+function matchesAddressTokens(suggestion: SearchSuggestion, addressTokens: string[]): boolean {
+  if (suggestion.featureType !== 'poi' || addressTokens.length === 0) return false
 
   return getSuggestionAddressCandidates(suggestion).some(candidate => {
     const candidateTokens = normalizeSearchText(candidate).split(' ').filter(Boolean)
@@ -227,7 +216,7 @@ function matchesAddressTokens(suggestion: SearchBoxSuggestion, addressTokens: st
   })
 }
 
-function matchesPromotionTokens(suggestion: SearchBoxSuggestion, promotionTokens: string[]): boolean {
+function matchesPromotionTokens(suggestion: SearchSuggestion, promotionTokens: string[]): boolean {
   if (promotionTokens.length === 0) return true
 
   return getSuggestionNameCandidates(suggestion).some(candidate => {
@@ -247,14 +236,14 @@ function matchesPromotionTokens(suggestion: SearchBoxSuggestion, promotionTokens
   })
 }
 
-function combineSuggestions(groups: SearchBoxSuggestion[][], limit: number): SearchBoxSuggestion[] {
-  const merged: SearchBoxSuggestion[] = []
+function combineSuggestions(groups: SearchSuggestion[][], limit: number): SearchSuggestion[] {
+  const merged: SearchSuggestion[] = []
   const seen = new Set<string>()
 
   for (const group of groups) {
     for (const suggestion of group) {
-      if (seen.has(suggestion.mapbox_id)) continue
-      seen.add(suggestion.mapbox_id)
+      if (seen.has(suggestion.id)) continue
+      seen.add(suggestion.id)
       merged.push(suggestion)
       if (merged.length >= limit) return merged
     }
@@ -264,11 +253,11 @@ function combineSuggestions(groups: SearchBoxSuggestion[][], limit: number): Sea
 }
 
 export function mergeSuggestionResults(
-  primary: SearchBoxSuggestion[],
-  secondary: SearchBoxSuggestion[],
+  primary: SearchSuggestion[],
+  secondary: SearchSuggestion[],
   fallback: SuggestionFallback,
   limit: number
-): SearchBoxSuggestion[] {
+): SearchSuggestion[] {
   const promotedFallback = secondary.filter(suggestion => {
     return (
       matchesAddressTokens(suggestion, fallback.addressTokens)
@@ -285,9 +274,9 @@ export function mergeSuggestionResults(
 }
 
 export function mergeSuggestions(
-  primary: SearchBoxSuggestion[],
-  secondary: SearchBoxSuggestion[],
+  primary: SearchSuggestion[],
+  secondary: SearchSuggestion[],
   limit: number
-): SearchBoxSuggestion[] {
+): SearchSuggestion[] {
   return combineSuggestions([primary, secondary], limit)
 }

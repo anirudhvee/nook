@@ -1,29 +1,25 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { SearchBoxSuggestion } from '@mapbox/search-js-core'
-import { getSuggestionSubtitle } from '../../../../components/map/searchPillSuggestionText'
+import { getSuggestionSubtitle } from '@/components/map/searchPillSuggestionText'
+import type { SearchSuggestion } from '@/components/map/searchTypes'
 
-function makeSuggestion(overrides: Partial<SearchBoxSuggestion>): SearchBoxSuggestion {
+function makeSuggestion(overrides: Partial<SearchSuggestion>): SearchSuggestion {
   return {
     name: '',
-    name_preferred: '',
-    mapbox_id: 'test-id',
-    feature_type: 'address',
+    namePreferred: '',
+    id: 'test-id',
+    placeId: 'test-place',
+    featureType: 'address',
     address: '',
-    full_address: '',
-    place_formatted: '',
-    context: {} as SearchBoxSuggestion['context'],
-    language: 'en',
-    maki: 'marker',
-    poi_category: [],
-    brand: '',
-    brand_id: '',
-    external_ids: {},
-    metadata: {},
-    distance: 0,
-    eta: 0,
-    added_distance: 0,
-    added_time: 0,
+    fullAddress: '',
+    placeFormatted: '',
+    context: {},
+    lat: 0,
+    lng: 0,
+    category: '',
+    type: '',
+    importance: 0,
+    placeRank: null,
     ...overrides,
   }
 }
@@ -31,10 +27,10 @@ function makeSuggestion(overrides: Partial<SearchBoxSuggestion>): SearchBoxSugge
 test('getSuggestionSubtitle includes street address for chain POIs', () => {
   const suggestion = makeSuggestion({
     name: 'Starbucks',
-    feature_type: 'poi',
+    featureType: 'poi',
     address: '150 Van Ness Avenue',
-    place_formatted: 'San Francisco, California 94102, United States',
-    full_address: '150 Van Ness Avenue, San Francisco, California 94102, United States',
+    placeFormatted: 'San Francisco, California 94102, United States',
+    fullAddress: '150 Van Ness Avenue, San Francisco, California 94102, United States',
   })
 
   assert.equal(
@@ -46,10 +42,10 @@ test('getSuggestionSubtitle includes street address for chain POIs', () => {
 test('getSuggestionSubtitle avoids repeating the street for address results', () => {
   const suggestion = makeSuggestion({
     name: '150 Van Ness Avenue',
-    feature_type: 'address',
+    featureType: 'address',
     address: '150 Van Ness Avenue',
-    place_formatted: 'San Francisco, California 94102, United States',
-    full_address: '150 Van Ness Avenue, San Francisco, California 94102, United States',
+    placeFormatted: 'San Francisco, California 94102, United States',
+    fullAddress: '150 Van Ness Avenue, San Francisco, California 94102, United States',
   })
 
   assert.equal(getSuggestionSubtitle(suggestion), 'San Francisco, California 94102, United States')
@@ -58,9 +54,9 @@ test('getSuggestionSubtitle avoids repeating the street for address results', ()
 test('getSuggestionSubtitle falls back to place context when there is no street address', () => {
   const suggestion = makeSuggestion({
     name: 'Mission District',
-    feature_type: 'neighborhood',
-    place_formatted: 'San Francisco, California, United States',
-    full_address: '',
+    featureType: 'neighborhood',
+    placeFormatted: 'San Francisco, California, United States',
+    fullAddress: '',
   })
 
   assert.equal(getSuggestionSubtitle(suggestion), 'San Francisco, California, United States')
@@ -69,9 +65,9 @@ test('getSuggestionSubtitle falls back to place context when there is no street 
 test('getSuggestionSubtitle returns null when no distinct subtitle is available', () => {
   const suggestion = makeSuggestion({
     name: 'California',
-    feature_type: 'region',
-    place_formatted: 'California',
-    full_address: '',
+    featureType: 'region',
+    placeFormatted: 'California',
+    fullAddress: '',
   })
 
   assert.equal(getSuggestionSubtitle(suggestion), null)
