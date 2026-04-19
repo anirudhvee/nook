@@ -1406,6 +1406,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
       maxPitch: 0,
       attributionControl: false,
     })
+    const initialViewportHeight = Math.round(window.visualViewport?.height ?? window.innerHeight)
 
     const handleStyleData = () => {
       syncProjectionDecorations(map, root)
@@ -1495,7 +1496,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
       const MOBILE_H = MOBILE_SHEET_HEADER_H
       map.setPadding({
         top: MOBILE_H,
-        bottom: Math.round(getMobileHalfVisibleHeight(getCurrentViewportHeight())),
+        bottom: Math.round(getMobileHalfVisibleHeight(initialViewportHeight)),
         left: 0,
         right: 0,
       })
@@ -1668,7 +1669,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
       mapRef.current = null
       mapLoadedRef.current = false
     }
-  }, [getCurrentViewportHeight, handleSelectNook, loadNearbyPlaces])
+  }, [handleSelectNook, loadNearbyPlaces])
 
   useEffect(() => {
     nooksRef.current = mapNooks

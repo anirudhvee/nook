@@ -103,8 +103,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ suggestions: [] as SearchSuggestion[], unavailable: false })
   }
 
-  const lat = Number(request.nextUrl.searchParams.get('lat'))
-  const lng = Number(request.nextUrl.searchParams.get('lng'))
+  const latParam = request.nextUrl.searchParams.get('lat')
+  const lngParam = request.nextUrl.searchParams.get('lng')
+  const lat = latParam === null ? Number.NaN : Number(latParam)
+  const lng = lngParam === null ? Number.NaN : Number(lngParam)
   const proximity = Number.isFinite(lat) && Number.isFinite(lng) ? [lng, lat] as [number, number] : null
   const acceptLanguage = request.headers.get('accept-language')
   const fallback = buildSuggestionFallback(query)

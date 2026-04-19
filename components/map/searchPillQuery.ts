@@ -41,36 +41,34 @@ function looksLikeStreetNameAbbreviation(tokens: string[], streetTypeIndex: numb
 function findAddressSegment(tokens: string[]): AddressSegment | null {
   const searchStartIndex = 0
 
-  while (searchStartIndex < tokens.length) {
-    let streetTypeIndex = findStreetTypeIndex(tokens, searchStartIndex)
-    if (streetTypeIndex < 0) return null
+  if (searchStartIndex >= tokens.length) return null
 
-    while (streetTypeIndex >= 0) {
-      let shouldContinue = false
+  let streetTypeIndex = findStreetTypeIndex(tokens, searchStartIndex)
+  if (streetTypeIndex < 0) return null
 
-      for (let tokenIndex = streetTypeIndex - 1; tokenIndex >= searchStartIndex; tokenIndex -= 1) {
-        if (isHouseNumberToken(tokens[tokenIndex] ?? '')) {
-          if (looksLikeStreetNameAbbreviation(tokens, streetTypeIndex)) {
-            shouldContinue = true
-            break
-          }
+  while (streetTypeIndex >= 0) {
+    let shouldContinue = false
 
-          return {
-            houseNumberIndex: tokenIndex,
-            streetTypeIndex,
-          }
+    for (let tokenIndex = streetTypeIndex - 1; tokenIndex >= searchStartIndex; tokenIndex -= 1) {
+      if (isHouseNumberToken(tokens[tokenIndex] ?? '')) {
+        if (looksLikeStreetNameAbbreviation(tokens, streetTypeIndex)) {
+          shouldContinue = true
+          break
+        }
+
+        return {
+          houseNumberIndex: tokenIndex,
+          streetTypeIndex,
         }
       }
-
-      if (shouldContinue) {
-        streetTypeIndex = findStreetTypeIndex(tokens, streetTypeIndex + 1)
-        continue
-      }
-
-      streetTypeIndex = findStreetTypeIndex(tokens, streetTypeIndex + 1)
     }
 
-    return null
+    if (shouldContinue) {
+      streetTypeIndex = findStreetTypeIndex(tokens, streetTypeIndex + 1)
+      continue
+    }
+
+    streetTypeIndex = findStreetTypeIndex(tokens, streetTypeIndex + 1)
   }
 
   return null

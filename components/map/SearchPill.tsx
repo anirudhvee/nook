@@ -107,10 +107,7 @@ export function SearchPill({
 
     const requestId = ++suggestionRequestIdRef.current
     try {
-      const params = new URLSearchParams({
-        q,
-        limit: String(SUGGESTION_LIMIT),
-      })
+      const params = new URLSearchParams({ q })
       if (loc) {
         params.set('lat', String(loc[1]))
         params.set('lng', String(loc[0]))

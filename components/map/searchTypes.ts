@@ -134,8 +134,6 @@ function buildPlaceFormatted(
     .filter(Boolean)
 
   if (parts.length === 0) return ''
-  if (parts[0] === primaryLabel && parts.length > 1) return parts.slice(1).join(', ')
-
   return parts.slice(1).join(', ')
 }
 
