@@ -196,64 +196,41 @@ function syncProjectionDecorations(map: maplibregl.Map, root: HTMLElement) {
   }
 }
 
-function keepCompactAttributionClosedUntilInteraction(map: maplibregl.Map) {
-  const container = map.getContainer()
-  let compactAttribution: HTMLElement | null = null
-  let compactButton: HTMLElement | null = null
-  let compactObserver: MutationObserver | null = null
+class ClosedCompactAttributionControl extends maplibregl.AttributionControl {
+  private allowOpen = false
 
-  let allowOpen = false
-
-  const collapse = () => {
-    if (allowOpen || !compactAttribution) return
-    compactAttribution.classList.remove('maplibregl-compact-show')
-    compactAttribution.removeAttribute('open')
+  override _toggleAttribution = () => {
+    this.allowOpen = true
+    if (this._container.classList.contains('maplibregl-compact')) {
+      if (this._container.classList.contains('maplibregl-compact-show')) {
+        this._container.setAttribute('open', '')
+        this._container.classList.remove('maplibregl-compact-show')
+      } else {
+        this._container.classList.add('maplibregl-compact-show')
+        this._container.removeAttribute('open')
+      }
+    }
   }
 
-  const handleClick = () => {
-    allowOpen = true
-  }
+  override _updateCompact = () => {
+    if (this._map.getCanvasContainer().offsetWidth <= 640 || this._compact) {
+      if (this._compact === false) {
+        this._container.setAttribute('open', '')
+      } else if (!this._container.classList.contains('maplibregl-compact') && !this._container.classList.contains('maplibregl-attrib-empty')) {
+        this._container.setAttribute('open', '')
+        this._container.classList.add('maplibregl-compact', 'maplibregl-compact-show')
+      }
+    } else {
+      this._container.setAttribute('open', '')
+      if (this._container.classList.contains('maplibregl-compact')) {
+        this._container.classList.remove('maplibregl-compact', 'maplibregl-compact-show')
+      }
+    }
 
-  const disconnectCompactAttribution = () => {
-    compactObserver?.disconnect()
-    compactObserver = null
-    compactButton?.removeEventListener('click', handleClick)
-  }
-
-  const bindCompactAttribution = () => {
-    const nextAttribution = container.querySelector('.maplibregl-ctrl-attrib.maplibregl-compact') as HTMLElement | null
-    const nextButton = nextAttribution?.querySelector('.maplibregl-ctrl-attrib-button') as HTMLElement | null
-
-    if (!nextAttribution || !nextButton) return
-    if (compactAttribution === nextAttribution && compactButton === nextButton) return
-
-    disconnectCompactAttribution()
-    compactAttribution = nextAttribution
-    compactButton = nextButton
-
-    compactButton.addEventListener('click', handleClick, { once: true })
-    collapse()
-    requestAnimationFrame(collapse)
-    compactObserver = new MutationObserver(collapse)
-    compactObserver.observe(compactAttribution, {
-      attributes: true,
-      attributeFilter: ['class', 'open'],
-    })
-  }
-
-  const containerObserver = new MutationObserver(() => {
-    bindCompactAttribution()
-  })
-  containerObserver.observe(container, {
-    childList: true,
-    subtree: true,
-  })
-  bindCompactAttribution()
-
-  return () => {
-    allowOpen = true
-    disconnectCompactAttribution()
-    containerObserver.disconnect()
+    if (this.allowOpen) return
+    if (!this._container.classList.contains('maplibregl-compact')) return
+    this._container.classList.remove('maplibregl-compact-show')
+    this._container.removeAttribute('open')
   }
 }
 
@@ -1417,7 +1394,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
       syncProjectionDecorations(map, root)
     }
 
-    const attributionControl = new maplibregl.AttributionControl({ compact: true })
+    const attributionControl = new ClosedCompactAttributionControl({ compact: true })
     attributionControlRef.current = attributionControl
     const navigationControl = new maplibregl.NavigationControl({ showCompass: false })
     navigationControlRef.current = navigationControl
@@ -1429,8 +1406,6 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
       map.addControl(navigationControl, 'bottom-right')
       desktopControlsAddedRef.current = true
     }
-    const releaseCompactAttribution = keepCompactAttributionClosedUntilInteraction(map)
-
     const geolocate = new maplibregl.GeolocateControl({
       positionOptions: { enableHighAccuracy: true },
       trackUserLocation: false,
@@ -1662,7 +1637,6 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     const pointMarkers = pointMarkersRef.current
 
     return () => {
-      releaseCompactAttribution()
       document.body.classList.remove('mercator-mode')
       root.style.removeProperty('--globe-rim-center-x')
       root.style.removeProperty('--globe-rim-center-y')
