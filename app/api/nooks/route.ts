@@ -6,80 +6,89 @@ import {
   resolvePrimaryThenOptionalFallback,
 } from '@/components/map/searchPillQuery'
 import {
-  toNominatimSearchResult,
-  type NominatimApiResult,
-  type NominatimSearchResult,
+  toSearchSuggestion,
+  type GeoapifyAutocompleteResponse,
+  type SearchSuggestion,
 } from '@/components/map/searchTypes'
 
-const NOMINATIM_SEARCH_URL = 'https://nominatim.openstreetmap.org/search'
-const USER_AGENT = 'Nook/0.1 (+https://findanook.com)'
+const GEOAPIFY_AUTOCOMPLETE_URL = 'https://api.geoapify.com/v1/geocode/autocomplete'
 const SUGGESTION_LIMIT = 5
 
-function buildViewbox(lat: number, lng: number): string {
-  const latDelta = 0.2
-  const lonDelta = Math.max(0.2, latDelta / Math.max(Math.cos((lat * Math.PI) / 180), 0.2))
-
-  return [
-    (lng - lonDelta).toFixed(6),
-    (lat + latDelta).toFixed(6),
-    (lng + lonDelta).toFixed(6),
-    (lat - latDelta).toFixed(6),
-  ].join(',')
+type SuggestionFetchResult = {
+  suggestions: SearchSuggestion[]
+  unavailable: boolean
 }
 
-async function fetchNominatimSuggestions(
+function getPreferredLanguage(acceptLanguage: string | null): string | null {
+  if (!acceptLanguage) return null
+
+  const preferredLanguage = acceptLanguage
+    .split(',')
+    .map(part => part.split(';')[0]?.trim())
+    .find(Boolean) ?? null
+
+  if (!preferredLanguage) return null
+
+  return preferredLanguage.split('-')[0]?.toLowerCase() ?? null
+}
+
+async function fetchGeoapifySuggestions(
   query: string,
   acceptLanguage: string | null,
   proximity: [number, number] | null
-): Promise<NominatimSearchResult[]> {
-  const requestSuggestions = async (bounded: boolean): Promise<NominatimSearchResult[]> => {
-    const params = new URLSearchParams({
-      q: query,
-      format: 'jsonv2',
-      addressdetails: '1',
-      dedupe: '1',
-      limit: String(SUGGESTION_LIMIT),
-      layer: 'address,poi',
-    })
-
-    if (acceptLanguage) {
-      params.set('accept-language', acceptLanguage)
+): Promise<SuggestionFetchResult> {
+  const apiKey = process.env.GEOAPIFY_API_KEY?.trim()
+  if (!apiKey) {
+    return {
+      suggestions: [],
+      unavailable: true,
     }
-
-    if (proximity) {
-      params.set('viewbox', buildViewbox(proximity[1], proximity[0]))
-      if (bounded) {
-        params.set('bounded', '1')
-      }
-    }
-
-    const response = await fetch(`${NOMINATIM_SEARCH_URL}?${params.toString()}`, {
-      headers: {
-        Accept: 'application/json',
-        'User-Agent': USER_AGENT,
-      },
-      next: {
-        revalidate: 3600,
-      },
-    })
-
-    if (!response.ok) {
-      throw new Error(`Nominatim request failed with status ${response.status}`)
-    }
-
-    const results = (await response.json()) as NominatimApiResult[]
-
-    return results
-      .map(toNominatimSearchResult)
-      .filter(result => Number.isFinite(result.lat) && Number.isFinite(result.lng))
   }
 
-  const boundedSuggestions = await requestSuggestions(true)
-  if (boundedSuggestions.length > 0 || !proximity) {
-    return boundedSuggestions
+  const params = new URLSearchParams({
+    text: query,
+    format: 'json',
+    limit: String(SUGGESTION_LIMIT),
+    apiKey,
+  })
+
+  const preferredLanguage = getPreferredLanguage(acceptLanguage)
+  if (preferredLanguage) {
+    params.set('lang', preferredLanguage)
   }
 
-  return requestSuggestions(false)
+  if (proximity) {
+    params.set('bias', `proximity:${proximity[0]},${proximity[1]}`)
+  }
+
+  const response = await fetch(`${GEOAPIFY_AUTOCOMPLETE_URL}?${params.toString()}`, {
+    headers: {
+      Accept: 'application/json',
+    },
+    next: {
+      revalidate: 3600,
+    },
+  })
+
+  if (response.status === 401 || response.status === 403 || response.status === 429) {
+    return {
+      suggestions: [],
+      unavailable: true,
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error(`Geoapify request failed with status ${response.status}`)
+  }
+
+  const payload = (await response.json()) as GeoapifyAutocompleteResponse
+
+  return {
+    suggestions: (payload.results ?? [])
+      .map(toSearchSuggestion)
+      .filter(result => Number.isFinite(result.lat) && Number.isFinite(result.lng)),
+    unavailable: false,
+  }
 }
 
 // Reserved route on main.
@@ -91,7 +100,7 @@ export async function GET(request: NextRequest) {
   }
 
   if (query.length < 3) {
-    return NextResponse.json({ suggestions: [] as NominatimSearchResult[] })
+    return NextResponse.json({ suggestions: [] as SearchSuggestion[], unavailable: false })
   }
 
   const lat = Number(request.nextUrl.searchParams.get('lat'))
@@ -101,17 +110,22 @@ export async function GET(request: NextRequest) {
   const fallback = buildSuggestionFallback(query)
 
   try {
-    const [primarySuggestions, fallbackSuggestions] = await resolvePrimaryThenOptionalFallback(
-      fetchNominatimSuggestions(query, acceptLanguage, proximity),
-      fallback ? fetchNominatimSuggestions(fallback.query, acceptLanguage, proximity) : null,
+    const [primaryResult, fallbackResult] = await resolvePrimaryThenOptionalFallback(
+      fetchGeoapifySuggestions(query, acceptLanguage, proximity),
+      fallback ? fetchGeoapifySuggestions(fallback.query, acceptLanguage, proximity) : null,
       () => undefined
     )
 
-    const suggestions = fallback && fallbackSuggestions
-      ? mergeSuggestionResults(primarySuggestions, fallbackSuggestions, fallback, SUGGESTION_LIMIT)
-      : mergeSuggestions(primarySuggestions, fallbackSuggestions ?? [], SUGGESTION_LIMIT)
+    if (primaryResult.unavailable) {
+      return NextResponse.json({ suggestions: [] as SearchSuggestion[], unavailable: true })
+    }
 
-    return NextResponse.json({ suggestions })
+    const fallbackSuggestions = fallbackResult?.unavailable ? null : fallbackResult?.suggestions ?? null
+    const suggestions = fallback && fallbackSuggestions
+      ? mergeSuggestionResults(primaryResult.suggestions, fallbackSuggestions, fallback, SUGGESTION_LIMIT)
+      : mergeSuggestions(primaryResult.suggestions, fallbackSuggestions ?? [], SUGGESTION_LIMIT)
+
+    return NextResponse.json({ suggestions, unavailable: false })
   } catch {
     return NextResponse.json({ error: 'Failed to fetch search suggestions' }, { status: 502 })
   }

@@ -6,7 +6,7 @@ import { LogoWordmark } from '@/components/LogoWordmark'
 import { cn } from '@/lib/utils'
 import { findDirectMatchSuggestion } from './searchPillMatch'
 import { getSuggestionSubtitle } from './searchPillSuggestionText'
-import type { NominatimSearchResult } from './searchTypes'
+import type { SearchSuggestion } from './searchTypes'
 
 const SUGGESTION_LIMIT = 5
 
@@ -43,7 +43,8 @@ export function SearchPill({
   onLocationSelect,
   userLocation,
 }: Props) {
-  const [suggestions, setSuggestions] = useState<NominatimSearchResult[]>([])
+  const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([])
+  const [searchUnavailable, setSearchUnavailable] = useState(false)
   const [highlightedSuggestionId, setHighlightedSuggestionId] = useState<string | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -61,18 +62,21 @@ export function SearchPill({
 
   const collapseSearch = useCallback(() => {
     setSuggestions([])
+    setSearchUnavailable(false)
     setHighlightedSuggestionId(null)
     onSearchCollapse()
   }, [onSearchCollapse])
 
   const clearSearch = useCallback(() => {
     setSuggestions([])
+    setSearchUnavailable(false)
     setHighlightedSuggestionId(null)
     onSearchClear()
   }, [onSearchClear])
 
   const clearTypedQuery = useCallback(() => {
     setSuggestions([])
+    setSearchUnavailable(false)
     setHighlightedSuggestionId(null)
     onQueryChange('')
     requestAnimationFrame(() => inputRef.current?.focus())
@@ -97,6 +101,7 @@ export function SearchPill({
   const fetchSuggestions = useCallback(async (q: string, loc: [number, number] | null) => {
     if (q.trim().length < 3) {
       setSuggestions([])
+      setSearchUnavailable(false)
       return
     }
 
@@ -114,13 +119,16 @@ export function SearchPill({
       const response = await fetch(`/api/nooks?${params.toString()}`)
       if (!response.ok) throw new Error('suggestion request failed')
       const payload = (await response.json()) as {
-        suggestions?: NominatimSearchResult[]
+        suggestions?: SearchSuggestion[]
+        unavailable?: boolean
       }
       if (requestId !== suggestionRequestIdRef.current) return
       setSuggestions(payload.suggestions ?? [])
+      setSearchUnavailable(Boolean(payload.unavailable))
     } catch {
       if (requestId !== suggestionRequestIdRef.current) return
       setSuggestions([])
+      setSearchUnavailable(false)
     }
   }, [])
 
@@ -147,12 +155,14 @@ export function SearchPill({
 
   const handleInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     if (hasSelectedLocation) onSelectedLocationEditStart()
+    setSearchUnavailable(false)
     onQueryChange(e.target.value)
   }, [hasSelectedLocation, onQueryChange, onSelectedLocationEditStart])
 
-  const handleSelect = useCallback((suggestion: NominatimSearchResult) => {
+  const handleSelect = useCallback((suggestion: SearchSuggestion) => {
     onQueryChange(suggestion.name)
     setSuggestions([])
+    setSearchUnavailable(false)
     setHighlightedSuggestionId(null)
     onLocationSelect(suggestion.lng, suggestion.lat, suggestion.name)
   }, [onLocationSelect, onQueryChange])
@@ -214,6 +224,7 @@ export function SearchPill({
     hasSelectedLocation ? clearSearch : hasTypedQuery ? clearTypedQuery : collapseSearch
   const clearButtonLabel = hasSelectedLocation || hasTypedQuery ? 'Clear search' : 'Collapse search'
   const isClearVisible = fullWidth ? (hasSelectedLocation || hasTypedQuery) : isOpen
+  const shouldShowDropdown = visibleSuggestions.length > 0 || (canShowSuggestions && searchUnavailable)
 
   return (
     <div className={cn('relative', fullWidth && 'w-full')}>
@@ -294,36 +305,42 @@ export function SearchPill({
         </div>
       </div>
 
-      {visibleSuggestions.length > 0 && (
+      {shouldShowDropdown && (
         <div
           id={listboxId}
-          role="listbox"
+          role={visibleSuggestions.length > 0 ? 'listbox' : undefined}
           className="absolute top-[calc(100%+8px)] left-0 right-0 bg-background/95 backdrop-blur-sm rounded-xl shadow-xl border border-border overflow-hidden z-50"
         >
-          {visibleSuggestions.map((s, i) => {
-            const subtitle = getSuggestionSubtitle(s)
+          {visibleSuggestions.length > 0 ? (
+            visibleSuggestions.map((s, i) => {
+              const subtitle = getSuggestionSubtitle(s)
 
-            return (
-              <button
-                id={`${listboxId}-option-${i}`}
-                key={s.id}
-                role="option"
-                aria-selected={activeSuggestionIndex === i}
-                onClick={() => handleSelect(s)}
-                onMouseEnter={() => setHighlightedSuggestionId(s.id)}
-                className={cn(
-                  'w-full text-left px-4 py-2.5 transition-colors',
-                  activeSuggestionIndex === i ? 'bg-muted' : 'hover:bg-muted',
-                  i < visibleSuggestions.length - 1 && 'border-b border-border/40'
-                )}
-              >
-                <p className="text-sm font-semibold leading-snug">{s.name}</p>
-                {subtitle && (
-                  <p className="text-xs text-muted-foreground mt-0.5 truncate">{subtitle}</p>
-                )}
-              </button>
-            )
-          })}
+              return (
+                <button
+                  id={`${listboxId}-option-${i}`}
+                  key={s.id}
+                  role="option"
+                  aria-selected={activeSuggestionIndex === i}
+                  onClick={() => handleSelect(s)}
+                  onMouseEnter={() => setHighlightedSuggestionId(s.id)}
+                  className={cn(
+                    'w-full text-left px-4 py-2.5 transition-colors',
+                    activeSuggestionIndex === i ? 'bg-muted' : 'hover:bg-muted',
+                    i < visibleSuggestions.length - 1 && 'border-b border-border/40'
+                  )}
+                >
+                  <p className="text-sm font-semibold leading-snug">{s.name}</p>
+                  {subtitle && (
+                    <p className="text-xs text-muted-foreground mt-0.5 truncate">{subtitle}</p>
+                  )}
+                </button>
+              )
+            })
+          ) : (
+            <p className="px-4 py-3 text-xs text-muted-foreground">
+              Search temporarily unavailable
+            </p>
+          )}
         </div>
       )}
     </div>

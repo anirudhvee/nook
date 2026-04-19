@@ -1,6 +1,4 @@
-export type NominatimAddress = Record<string, string | undefined>
-
-export type NominatimContext = {
+export type SearchContext = {
   country?: {
     name?: string
     country_code?: string
@@ -28,7 +26,7 @@ export type NominatimContext = {
   }
 }
 
-export type NominatimSearchResult = {
+export type SearchSuggestion = {
   id: string
   placeId: string
   osmType?: string
@@ -39,7 +37,7 @@ export type NominatimSearchResult = {
   address: string
   fullAddress: string
   placeFormatted: string
-  context: NominatimContext
+  context: SearchContext
   lat: number
   lng: number
   category: string
@@ -48,179 +46,242 @@ export type NominatimSearchResult = {
   placeRank: number | null
 }
 
-export type NominatimApiResult = {
-  place_id: number | string
-  osm_type?: string
-  osm_id?: number | string
-  lat: string
-  lon: string
-  display_name: string
-  category?: string
-  type: string
-  addresstype?: string
-  importance?: number
-  place_rank?: number
-  address?: NominatimAddress
+export type GeoapifyAutocompleteResponse = {
+  results?: GeoapifyAutocompleteResult[]
+}
+
+export type GeoapifyAutocompleteResult = {
+  place_id?: string
+  lat: number
+  lon: number
+  formatted: string
+  address_line1?: string
+  address_line2?: string
   name?: string
+  housenumber?: string
+  street?: string
+  city?: string
+  town?: string
+  village?: string
+  hamlet?: string
+  municipality?: string
+  county?: string
+  district?: string
+  suburb?: string
+  neighbourhood?: string
+  neighborhood?: string
+  state?: string
+  state_code?: string
+  postcode?: string
+  country?: string
+  country_code?: string
+  result_type?: string
+  category?: string
+  rank?: {
+    confidence?: number
+    importance?: number
+    popularity?: number
+  }
+  datasource?: {
+    raw?: {
+      osm_id?: string | number
+      osm_type?: string
+      place_id?: string | number
+      type?: string
+      category?: string
+      name?: string
+    }
+  }
 }
 
 function firstDefined(values: Array<string | undefined>): string {
   return values.find(value => typeof value === 'string' && value.trim().length > 0)?.trim() ?? ''
 }
 
-function buildAddressLabel(address: NominatimAddress, fallback: string): string {
-  const houseNumber = address.house_number?.trim()
-  const road = firstDefined([
-    address.road,
-    address.pedestrian,
-    address.footway,
-    address.cycleway,
-    address.path,
-    address.highway,
-  ])
+function buildStreetAddress(result: GeoapifyAutocompleteResult): string {
+  const houseNumber = result.housenumber?.trim()
+  const street = result.street?.trim()
 
-  if (houseNumber && road) return `${houseNumber} ${road}`
-  if (road) return road
+  if (houseNumber && street) return `${houseNumber} ${street}`
+  if (street) return street
 
-  return firstDefined([
-    address.amenity,
-    address.shop,
-    address.tourism,
-    address.leisure,
-    address.office,
-    address.building,
-    address.hamlet,
-    address.neighbourhood,
-    address.neighborhood,
-    address.suburb,
-    address.city_district,
-    address.city,
-    address.town,
-    address.village,
-    fallback,
-  ])
+  return ''
 }
 
-function inferFeatureType(result: NominatimApiResult, address: NominatimAddress): string {
-  const addresstype = result.addresstype ?? ''
-  const category = result.category ?? ''
+function trimLeadingSegment(value: string, segment: string): string {
+  if (!segment) return value
 
-  if (
-    category === 'amenity'
-    || category === 'shop'
-    || category === 'tourism'
-    || category === 'leisure'
-    || category === 'office'
-  ) {
-    return 'poi'
-  }
-
-  if (addresstype === 'house' || addresstype === 'building' || address.road || address.house_number) {
-    return 'address'
-  }
-
-  if (addresstype === 'neighbourhood' || addresstype === 'neighborhood' || addresstype === 'suburb') {
-    return 'neighborhood'
-  }
-
-  if (addresstype === 'city' || addresstype === 'town' || addresstype === 'village' || addresstype === 'municipality') {
-    return 'locality'
-  }
-
-  if (addresstype === 'county' || addresstype === 'district') {
-    return 'district'
-  }
-
-  if (addresstype === 'state' || addresstype === 'region') {
-    return 'region'
-  }
-
-  if (addresstype === 'country') {
-    return 'country'
-  }
-
-  return addresstype || category || result.type || 'other'
+  const prefix = `${segment}, `
+  return value.startsWith(prefix) ? value.slice(prefix.length) : value
 }
 
-function buildPlaceFormatted(displayName: string): string {
-  const parts = displayName
+function buildPlaceFormatted(
+  result: GeoapifyAutocompleteResult,
+  primaryLabel: string,
+  streetAddress: string
+): string {
+  const addressLine2 = result.address_line2?.trim()
+  if (addressLine2) {
+    return trimLeadingSegment(addressLine2, streetAddress)
+  }
+
+  const formatted = result.formatted.trim()
+  if (!formatted) return ''
+
+  const parts = formatted
     .split(',')
     .map(part => part.trim())
     .filter(Boolean)
 
+  if (parts.length === 0) return ''
+  if (parts[0] === primaryLabel && parts.length > 1) return parts.slice(1).join(', ')
+
   return parts.slice(1).join(', ')
 }
 
-export function toNominatimSearchResult(result: NominatimApiResult): NominatimSearchResult {
-  const address = result.address ?? {}
-  const displayName = result.display_name.trim()
-  const fallbackName = displayName.split(',')[0]?.trim() ?? displayName
+function inferFeatureType(result: GeoapifyAutocompleteResult): string {
+  const resultType = (result.result_type ?? '').toLowerCase()
+  const category = (result.category ?? result.datasource?.raw?.category ?? '').toLowerCase()
+  const hasStreetAddress = Boolean(result.housenumber || result.street)
+
+  if (
+    resultType === 'amenity'
+    || category.startsWith('accommodation')
+    || category.startsWith('activity')
+    || category.startsWith('catering')
+    || category.startsWith('commercial')
+    || category.startsWith('education')
+    || category.startsWith('entertainment')
+    || category.startsWith('leisure')
+    || category.startsWith('office')
+    || category.startsWith('service')
+    || category.startsWith('sport')
+    || category.startsWith('tourism')
+  ) {
+    return 'poi'
+  }
+
+  if (resultType === 'street' || resultType === 'building' || hasStreetAddress) {
+    return 'address'
+  }
+
+  if (resultType === 'suburb' || resultType === 'quarter' || resultType === 'neighbourhood' || resultType === 'neighborhood') {
+    return 'neighborhood'
+  }
+
+  if (
+    resultType === 'city'
+    || resultType === 'town'
+    || resultType === 'village'
+    || resultType === 'municipality'
+    || resultType === 'hamlet'
+  ) {
+    return 'locality'
+  }
+
+  if (resultType === 'county' || resultType === 'district') {
+    return 'district'
+  }
+
+  if (resultType === 'state' || resultType === 'region') {
+    return 'region'
+  }
+
+  if (resultType === 'country') {
+    return 'country'
+  }
+
+  return resultType || category || result.datasource?.raw?.type || 'other'
+}
+
+export function toSearchSuggestion(result: GeoapifyAutocompleteResult): SearchSuggestion {
+  const streetAddress = buildStreetAddress(result)
+  const fallbackLabel = result.formatted.split(',')[0]?.trim() ?? result.formatted.trim()
+  const featureType = inferFeatureType(result)
   const name = firstDefined([
     result.name,
-    address.amenity,
-    address.shop,
-    address.tourism,
-    address.leisure,
-    buildAddressLabel(address, fallbackName),
-    fallbackName,
+    result.datasource?.raw?.name,
+    featureType === 'poi' ? '' : streetAddress,
+    result.address_line1,
+    fallbackLabel,
   ])
-  const addressLabel = buildAddressLabel(address, fallbackName)
-  const countryCode = address.country_code?.toUpperCase()
+  const address = firstDefined([
+    streetAddress,
+    result.address_line1 && result.address_line1.trim() !== name ? result.address_line1 : '',
+    featureType === 'poi' ? '' : fallbackLabel,
+  ])
+  const fullAddress = result.formatted.trim()
+  const placeFormatted = buildPlaceFormatted(
+    result,
+    firstDefined([result.address_line1, name, fallbackLabel]),
+    streetAddress
+  )
+  const placeId = String(
+    result.place_id
+      ?? result.datasource?.raw?.place_id
+      ?? result.datasource?.raw?.osm_id
+      ?? fullAddress
+  )
 
   return {
-    id: [result.osm_type ?? 'place', result.osm_id ?? result.place_id, result.category ?? result.type].join(':'),
-    placeId: String(result.place_id),
-    osmType: result.osm_type,
-    osmId: result.osm_id != null ? String(result.osm_id) : undefined,
+    id: [
+      result.datasource?.raw?.osm_type ?? result.result_type ?? 'place',
+      result.datasource?.raw?.osm_id ?? placeId,
+      result.category ?? result.datasource?.raw?.type ?? result.result_type ?? 'result',
+    ].join(':'),
+    placeId,
+    osmType: result.datasource?.raw?.osm_type,
+    osmId: result.datasource?.raw?.osm_id != null ? String(result.datasource.raw.osm_id) : undefined,
     name,
     namePreferred: name,
-    featureType: inferFeatureType(result, address),
-    address: addressLabel,
-    fullAddress: displayName,
-    placeFormatted: buildPlaceFormatted(displayName),
+    featureType,
+    address,
+    fullAddress,
+    placeFormatted,
     context: {
-      country: address.country || countryCode
+      country: result.country || result.country_code
         ? {
-            name: address.country,
-            country_code: countryCode,
+            name: result.country,
+            country_code: result.country_code?.toUpperCase(),
           }
         : undefined,
-      region: address.state || address.region || address.state_district
+      region: result.state || result.state_code
         ? {
-            name: firstDefined([address.state, address.region, address.state_district]),
+            name: result.state,
+            region_code: result.state_code,
           }
         : undefined,
-      place: firstDefined([address.city, address.town, address.village, address.municipality])
+      place: firstDefined([result.city, result.town, result.village, result.municipality, result.hamlet])
         ? {
-            name: firstDefined([address.city, address.town, address.village, address.municipality]),
+            name: firstDefined([result.city, result.town, result.village, result.municipality, result.hamlet]),
           }
         : undefined,
-      locality: firstDefined([address.suburb, address.quarter, address.borough])
+      locality: result.suburb
         ? {
-            name: firstDefined([address.suburb, address.quarter, address.borough]),
+            name: result.suburb,
           }
         : undefined,
-      district: firstDefined([address.county, address.city_district, address.state_district, address.district])
+      district: firstDefined([result.county, result.district])
         ? {
-            name: firstDefined([address.county, address.city_district, address.state_district, address.district]),
+            name: firstDefined([result.county, result.district]),
           }
         : undefined,
-      neighborhood: firstDefined([address.neighbourhood, address.neighborhood, address.hamlet])
+      neighborhood: firstDefined([result.neighbourhood, result.neighborhood])
         ? {
-            name: firstDefined([address.neighbourhood, address.neighborhood, address.hamlet]),
+            name: firstDefined([result.neighbourhood, result.neighborhood]),
           }
         : undefined,
-      postcode: address.postcode
+      postcode: result.postcode
         ? {
-            name: address.postcode,
+            name: result.postcode,
           }
         : undefined,
     },
     lat: Number(result.lat),
     lng: Number(result.lon),
-    category: result.category ?? '',
-    type: result.type,
-    importance: result.importance ?? 0,
-    placeRank: result.place_rank ?? null,
+    category: result.category ?? result.datasource?.raw?.category ?? '',
+    type: result.result_type ?? result.datasource?.raw?.type ?? '',
+    importance: result.rank?.importance ?? result.rank?.popularity ?? 0,
+    placeRank: result.rank?.confidence ?? null,
   }
 }

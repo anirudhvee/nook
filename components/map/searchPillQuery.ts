@@ -1,4 +1,4 @@
-import type { NominatimSearchResult } from './searchTypes'
+import type { SearchSuggestion } from './searchTypes'
 import { normalizeSearchText } from './searchPillMatch'
 import { findStreetTypeIndex } from './searchPillTokens'
 
@@ -186,7 +186,7 @@ export async function resolvePrimaryThenOptionalFallback<T>(
   return [primary, fallback]
 }
 
-function getSuggestionAddressCandidates(suggestion: NominatimSearchResult): string[] {
+function getSuggestionAddressCandidates(suggestion: SearchSuggestion): string[] {
   const fullAddress = typeof suggestion.fullAddress === 'string' ? suggestion.fullAddress : ''
   const primaryAddress = fullAddress.split(',')[0] ?? ''
 
@@ -196,7 +196,7 @@ function getSuggestionAddressCandidates(suggestion: NominatimSearchResult): stri
   ].filter(Boolean)
 }
 
-function getSuggestionNameCandidates(suggestion: NominatimSearchResult): string[] {
+function getSuggestionNameCandidates(suggestion: SearchSuggestion): string[] {
   return [
     typeof suggestion.name === 'string' ? suggestion.name : '',
     typeof suggestion.namePreferred === 'string' ? suggestion.namePreferred : '',
@@ -213,7 +213,7 @@ function matchesAddressToken(queryToken: string, candidateToken: string, index: 
   return candidateToken.startsWith(queryToken)
 }
 
-function matchesAddressTokens(suggestion: NominatimSearchResult, addressTokens: string[]): boolean {
+function matchesAddressTokens(suggestion: SearchSuggestion, addressTokens: string[]): boolean {
   if (suggestion.featureType !== 'poi' || addressTokens.length === 0) return false
 
   return getSuggestionAddressCandidates(suggestion).some(candidate => {
@@ -226,7 +226,7 @@ function matchesAddressTokens(suggestion: NominatimSearchResult, addressTokens: 
   })
 }
 
-function matchesPromotionTokens(suggestion: NominatimSearchResult, promotionTokens: string[]): boolean {
+function matchesPromotionTokens(suggestion: SearchSuggestion, promotionTokens: string[]): boolean {
   if (promotionTokens.length === 0) return true
 
   return getSuggestionNameCandidates(suggestion).some(candidate => {
@@ -246,8 +246,8 @@ function matchesPromotionTokens(suggestion: NominatimSearchResult, promotionToke
   })
 }
 
-function combineSuggestions(groups: NominatimSearchResult[][], limit: number): NominatimSearchResult[] {
-  const merged: NominatimSearchResult[] = []
+function combineSuggestions(groups: SearchSuggestion[][], limit: number): SearchSuggestion[] {
+  const merged: SearchSuggestion[] = []
   const seen = new Set<string>()
 
   for (const group of groups) {
@@ -263,11 +263,11 @@ function combineSuggestions(groups: NominatimSearchResult[][], limit: number): N
 }
 
 export function mergeSuggestionResults(
-  primary: NominatimSearchResult[],
-  secondary: NominatimSearchResult[],
+  primary: SearchSuggestion[],
+  secondary: SearchSuggestion[],
   fallback: SuggestionFallback,
   limit: number
-): NominatimSearchResult[] {
+): SearchSuggestion[] {
   const promotedFallback = secondary.filter(suggestion => {
     return (
       matchesAddressTokens(suggestion, fallback.addressTokens)
@@ -284,9 +284,9 @@ export function mergeSuggestionResults(
 }
 
 export function mergeSuggestions(
-  primary: NominatimSearchResult[],
-  secondary: NominatimSearchResult[],
+  primary: SearchSuggestion[],
+  secondary: SearchSuggestion[],
   limit: number
-): NominatimSearchResult[] {
+): SearchSuggestion[] {
   return combineSuggestions([primary, secondary], limit)
 }

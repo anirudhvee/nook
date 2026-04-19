@@ -1,11 +1,11 @@
-import type { NominatimSearchResult } from './searchTypes'
+import type { SearchSuggestion } from './searchTypes'
 import { normalizeSearchText } from './searchPillMatch'
 
 function readSuggestionText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-export function getSuggestionSubtitle(suggestion: NominatimSearchResult): string | null {
+export function getSuggestionSubtitle(suggestion: SearchSuggestion): string | null {
   const name = readSuggestionText(suggestion.name)
   const preferredName = readSuggestionText(suggestion.namePreferred)
   const address = readSuggestionText(suggestion.address)

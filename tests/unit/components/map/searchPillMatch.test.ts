@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { NominatimSearchResult } from '../../../../components/map/searchTypes'
+import type { SearchSuggestion } from '../../../../components/map/searchTypes'
 import { findDirectMatchSuggestion, normalizeSearchText } from '../../../../components/map/searchPillMatch'
 
-function makeSuggestion(overrides: Partial<NominatimSearchResult>): NominatimSearchResult {
+function makeSuggestion(overrides: Partial<SearchSuggestion>): SearchSuggestion {
   return {
     name: '',
     namePreferred: '',

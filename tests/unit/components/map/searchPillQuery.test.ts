@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { NominatimSearchResult } from '../../../../components/map/searchTypes'
+import type { SearchSuggestion } from '../../../../components/map/searchTypes'
 import {
   buildAddressFallbackQuery,
   buildPartialAddressFallbackQuery,
@@ -10,7 +10,7 @@ import {
   resolvePrimaryThenOptionalFallback,
 } from '../../../../components/map/searchPillQuery'
 
-function makeSuggestion(id: string): NominatimSearchResult {
+function makeSuggestion(id: string): SearchSuggestion {
   return {
     name: id,
     namePreferred: id,
@@ -248,7 +248,7 @@ test('mergeSuggestionResults promotes fallback POIs that match the typed address
       fullAddress: '233 Willow Street, San Francisco, California 94109, United States',
       name: '233 Willow Street',
     },
-  ] as NominatimSearchResult[]
+  ] as SearchSuggestion[]
 
   const fallback = [
     {
@@ -265,7 +265,7 @@ test('mergeSuggestionResults promotes fallback POIs that match the typed address
       address: '201 Mission Street',
       fullAddress: '201 Mission Street, San Francisco, California 94105, United States',
     },
-  ] as NominatimSearchResult[]
+  ] as SearchSuggestion[]
 
   const merged = mergeSuggestionResults(
     primary,
@@ -286,7 +286,7 @@ test('mergeSuggestionResults requires an exact house-number match before promoti
       fullAddress: '150 Van Ness Avenue, San Francisco, California 94102, United States',
       name: '150 Van Ness Avenue',
     },
-  ] as NominatimSearchResult[]
+  ] as SearchSuggestion[]
 
   const fallback = [
     {
@@ -303,7 +303,7 @@ test('mergeSuggestionResults requires an exact house-number match before promoti
       address: '150 Van Ness Avenue',
       fullAddress: '150 Van Ness Avenue, San Francisco, California 94102, United States',
     },
-  ] as NominatimSearchResult[]
+  ] as SearchSuggestion[]
 
   const merged = mergeSuggestionResults(
     primary,
@@ -324,7 +324,7 @@ test('mergeSuggestionResults skips promotion when fallback only matches locality
       fullAddress: '150 Market Street, San Francisco, California 94105, United States',
       name: '150 Market Street',
     },
-  ] as NominatimSearchResult[]
+  ] as SearchSuggestion[]
 
   const fallback = [
     {
@@ -334,7 +334,7 @@ test('mergeSuggestionResults skips promotion when fallback only matches locality
       address: '150 Market Street',
       fullAddress: '150 Market Street, San Francisco, California 94105, United States',
     },
-  ] as NominatimSearchResult[]
+  ] as SearchSuggestion[]
 
   const merged = mergeSuggestionResults(
     primary,
@@ -359,7 +359,7 @@ test('mergeSuggestionResults ignores trailing locality tokens after a matched ve
       fullAddress: '150 Market Street, San Francisco, California 94105, United States',
       name: '150 Market Street',
     },
-  ] as NominatimSearchResult[]
+  ] as SearchSuggestion[]
 
   const fallback = [
     {
@@ -369,7 +369,7 @@ test('mergeSuggestionResults ignores trailing locality tokens after a matched ve
       address: '150 Market Street',
       fullAddress: '150 Market Street, San Francisco, California 94105, United States',
     },
-  ] as NominatimSearchResult[]
+  ] as SearchSuggestion[]
 
   const merged = mergeSuggestionResults(
     primary,
@@ -394,7 +394,7 @@ test('mergeSuggestionResults promotes POIs for street names that include street-
       fullAddress: '150 St John Street, San Jose, California 95113, United States',
       name: '150 St John Street',
     },
-  ] as NominatimSearchResult[]
+  ] as SearchSuggestion[]
 
   const fallback = [
     {
@@ -404,7 +404,7 @@ test('mergeSuggestionResults promotes POIs for street names that include street-
       address: '150 St John Street',
       fullAddress: '150 St John Street, San Jose, California 95113, United States',
     },
-  ] as NominatimSearchResult[]
+  ] as SearchSuggestion[]
 
   const merged = mergeSuggestionResults(
     primary,

@@ -1,4 +1,4 @@
-import type { NominatimSearchResult } from './searchTypes'
+import type { SearchSuggestion } from './searchTypes'
 import { getCanonicalStreetType } from './searchPillTokens'
 
 const DIRECTION_TOKENS: Record<string, string> = {
@@ -38,7 +38,7 @@ function getNormalizedTokens(value: string): string[] {
   return normalizeSearchText(value).split(' ').filter(Boolean)
 }
 
-function getSuggestionCandidates(suggestion: NominatimSearchResult): string[] {
+function getSuggestionCandidates(suggestion: SearchSuggestion): string[] {
   const fullAddress = readSuggestionText(suggestion.fullAddress)
   const primaryAddress = fullAddress.split(',')[0] ?? ''
 
@@ -52,7 +52,7 @@ function getSuggestionCandidates(suggestion: NominatimSearchResult): string[] {
   ].filter(Boolean)
 }
 
-function getAddressCandidates(suggestion: NominatimSearchResult): string[] {
+function getAddressCandidates(suggestion: SearchSuggestion): string[] {
   const fullAddress = readSuggestionText(suggestion.fullAddress)
   const primaryAddress = fullAddress.split(',')[0] ?? ''
 
@@ -64,7 +64,7 @@ function getAddressCandidates(suggestion: NominatimSearchResult): string[] {
   ].filter(Boolean)
 }
 
-function getSuggestionContextTerms(suggestion: NominatimSearchResult): string[] {
+function getSuggestionContextTerms(suggestion: SearchSuggestion): string[] {
   const context = suggestion.context
 
   return [
@@ -90,7 +90,7 @@ function isPrefixMatch(queryTokens: string[], candidateTokens: string[]): boolea
   return candidateTokens.every((token, index) => queryTokens[index] === token)
 }
 
-function matchesContextTerms(extraTokens: string[], suggestion: NominatimSearchResult): boolean {
+function matchesContextTerms(extraTokens: string[], suggestion: SearchSuggestion): boolean {
   if (extraTokens.length === 0) return true
 
   const contextTerms = getSuggestionContextTerms(suggestion)
@@ -105,7 +105,7 @@ function matchesContextTerms(extraTokens: string[], suggestion: NominatimSearchR
   })
 }
 
-export function isDirectMatch(query: string, suggestion: NominatimSearchResult): boolean {
+export function isDirectMatch(query: string, suggestion: SearchSuggestion): boolean {
   const normalizedQuery = normalizeSearchText(query)
   if (!normalizedQuery) return false
 
@@ -128,7 +128,7 @@ export function isDirectMatch(query: string, suggestion: NominatimSearchResult):
 
 export function findDirectMatchSuggestion(
   query: string,
-  suggestions: NominatimSearchResult[]
-): NominatimSearchResult | null {
+  suggestions: SearchSuggestion[]
+): SearchSuggestion | null {
   return suggestions.find(suggestion => isDirectMatch(query, suggestion)) ?? null
 }
