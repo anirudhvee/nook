@@ -14,7 +14,7 @@
       "data": "./natural-earth-populated-places-10m.geojson"
     },
     "openmaptiles": {
-      "attribution": "© <a href=\"https://www.anirudhvee.com\" target=\"_blank\">Anirudh Venkatachalam</a> | <a href=\"https://openfreemap.org\" target=\"_blank\">OpenFreeMap</a> <a href=\"https://www.openmaptiles.org/\" target=\"_blank\">&copy; OpenMapTiles</a> Data from <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\">OpenStreetMap</a>",
+      "attribution": "© <a href=\"https://www.anirudhvee.com\" target=\"_blank\" rel=\"noopener noreferrer\">Anirudh Venkatachalam</a> | <a href=\"https://openfreemap.org\" target=\"_blank\" rel=\"noopener noreferrer\">OpenFreeMap</a> <a href=\"https://www.openmaptiles.org/\" target=\"_blank\" rel=\"noopener noreferrer\">&copy; OpenMapTiles</a> Data from <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noopener noreferrer\">OpenStreetMap</a>",
       "type": "vector",
       "url": "https://tiles.openfreemap.org/planet"
     }
