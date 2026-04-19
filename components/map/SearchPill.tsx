@@ -120,7 +120,7 @@ export function SearchPill({
 
       if (!response.ok) {
         setSuggestions([])
-        setSearchUnavailable(Boolean(payload.unavailable) || true)
+        setSearchUnavailable(true)
         return
       }
 

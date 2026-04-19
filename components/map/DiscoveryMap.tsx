@@ -62,6 +62,7 @@ const SIDEBAR_BOTTOM_PX = 16
 const MAP_ATTRIBUTION_SAFE_AREA_PX = 16
 const PEEK_STRIP_HEIGHT_PX = 72
 const PANEL_STACK_GAP_PX = 8
+const DEFAULT_MAP_MIN_ZOOM = 1.08
 
 type GlobeProjectionData = {
   clippingPlane: [number, number, number, number]
@@ -1162,7 +1163,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
 
     const sortedPins = [...pins].sort((a, b) => a.lng - b.lng)
     const avgLat = pins.reduce((s, p) => s + p.lat, 0) / pins.length
-    const GLOBE_ZOOM = isMobileRef.current ? 0.5 : 1.8
+    const GLOBE_ZOOM = isMobileRef.current ? DEFAULT_MAP_MIN_ZOOM : 1.8
     const DEG_PER_SEC = 18
 
     const globePadding = isMobileRef.current
@@ -1406,7 +1407,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
       style: '/map-style.json',
       center: startCenter,
       zoom: startZoom,
-      minZoom: 1.08,
+      minZoom: DEFAULT_MAP_MIN_ZOOM,
       maxPitch: 0,
       attributionControl: false,
     })
@@ -1546,7 +1547,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
         filter: ['has', 'point_count'],
         layout: {
           'text-field': '{point_count_abbreviated}',
-          'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
+          'text-font': ['Noto Sans Regular'],
           'text-size': 13,
         },
         paint: { 'text-color': '#fff' },
