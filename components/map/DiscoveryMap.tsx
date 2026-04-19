@@ -199,6 +199,8 @@ function syncProjectionDecorations(map: maplibregl.Map, root: HTMLElement) {
 class ClosedCompactAttributionControl extends maplibregl.AttributionControl {
   private allowOpen = false
 
+  // This intentionally hooks MapLibre internals that are not part of the public API.
+  // Re-verify this control against maplibre-gl upgrades before changing versions.
   override _toggleAttribution = () => {
     this.allowOpen = true
     if (this._container.classList.contains('maplibregl-compact')) {
@@ -232,6 +234,30 @@ class ClosedCompactAttributionControl extends maplibregl.AttributionControl {
     this._container.classList.remove('maplibregl-compact-show')
     this._container.removeAttribute('open')
   }
+}
+
+type GlobeStar = {
+  x: number
+  y: number
+  r: number
+  a: number
+}
+
+function createGlobeStars(): GlobeStar[] {
+  return [
+    ...Array.from({ length: 1800 }, () => ({
+      x: Math.random(),
+      y: Math.random(),
+      r: Math.random() * 0.4 + 0.12,
+      a: Math.random() * 0.14 + 0.06,
+    })),
+    ...Array.from({ length: 220 }, () => ({
+      x: Math.random(),
+      y: Math.random(),
+      r: Math.random() * 0.7 + 0.24,
+      a: Math.random() * 0.22 + 0.14,
+    })),
+  ]
 }
 
 function updateGlobeRim(map: maplibregl.Map, root: HTMLElement) {
@@ -579,22 +605,10 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
   const isPassportOpen = isPassportPath(pathname)
   const urlSelectedNookId = getSelectedNookIdFromUrl(pathname)
   const globeCanvasRef = useRef<HTMLCanvasElement>(null)
-  const globeStarsRef = useRef(
-    [
-      ...Array.from({ length: 1800 }, () => ({
-        x: Math.random(),
-        y: Math.random(),
-        r: Math.random() * 0.4 + 0.12,
-        a: Math.random() * 0.14 + 0.06,
-      })),
-      ...Array.from({ length: 220 }, () => ({
-        x: Math.random(),
-        y: Math.random(),
-        r: Math.random() * 0.7 + 0.24,
-        a: Math.random() * 0.22 + 0.14,
-      })),
-    ]
-  )
+  const globeStarsRef = useRef<GlobeStar[]>([])
+  if (globeStarsRef.current.length === 0) {
+    globeStarsRef.current = createGlobeStars()
+  }
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const initialCenterRef = useRef<[number, number]>(initialCenter)
@@ -1616,6 +1630,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
           .then(zoom => {
             map.easeTo({ center: coords, zoom })
           })
+          .catch(() => {})
       })
 
       map.on('mouseenter', L_CLUSTERS, () => {

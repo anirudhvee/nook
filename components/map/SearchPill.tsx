@@ -58,27 +58,34 @@ export function SearchPill({
     onSearchOpen()
   }, [onSearchOpen])
 
+  const invalidateSuggestionRequests = useCallback(() => {
+    suggestionRequestIdRef.current += 1
+  }, [])
+
   const collapseSearch = useCallback(() => {
+    invalidateSuggestionRequests()
     setSuggestions([])
     setSearchUnavailable(false)
     setHighlightedSuggestionId(null)
     onSearchCollapse()
-  }, [onSearchCollapse])
+  }, [invalidateSuggestionRequests, onSearchCollapse])
 
   const clearSearch = useCallback(() => {
+    invalidateSuggestionRequests()
     setSuggestions([])
     setSearchUnavailable(false)
     setHighlightedSuggestionId(null)
     onSearchClear()
-  }, [onSearchClear])
+  }, [invalidateSuggestionRequests, onSearchClear])
 
   const clearTypedQuery = useCallback(() => {
+    invalidateSuggestionRequests()
     setSuggestions([])
     setSearchUnavailable(false)
     setHighlightedSuggestionId(null)
     onQueryChange('')
     requestAnimationFrame(() => inputRef.current?.focus())
-  }, [onQueryChange])
+  }, [invalidateSuggestionRequests, onQueryChange])
 
   useEffect(() => {
     if (!isOpen || hasSelectedLocation) return
@@ -98,6 +105,7 @@ export function SearchPill({
 
   const fetchSuggestions = useCallback(async (q: string, loc: [number, number] | null) => {
     if (q.trim().length < 3) {
+      invalidateSuggestionRequests()
       setSuggestions([])
       setSearchUnavailable(false)
       return
@@ -112,10 +120,6 @@ export function SearchPill({
       }
 
       const response = await fetch(`/api/nooks?${params.toString()}`)
-      const payload = (await response.json()) as {
-        suggestions?: SearchSuggestion[]
-        unavailable?: boolean
-      }
       if (requestId !== suggestionRequestIdRef.current) return
 
       if (!response.ok) {
@@ -123,6 +127,12 @@ export function SearchPill({
         setSearchUnavailable(true)
         return
       }
+
+      const payload = (await response.json()) as {
+        suggestions?: SearchSuggestion[]
+        unavailable?: boolean
+      }
+      if (requestId !== suggestionRequestIdRef.current) return
 
       setSuggestions(payload.suggestions ?? [])
       setSearchUnavailable(Boolean(payload.unavailable))
@@ -156,17 +166,19 @@ export function SearchPill({
 
   const handleInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     if (hasSelectedLocation) onSelectedLocationEditStart()
+    invalidateSuggestionRequests()
     setSearchUnavailable(false)
     onQueryChange(e.target.value)
-  }, [hasSelectedLocation, onQueryChange, onSelectedLocationEditStart])
+  }, [hasSelectedLocation, invalidateSuggestionRequests, onQueryChange, onSelectedLocationEditStart])
 
   const handleSelect = useCallback((suggestion: SearchSuggestion) => {
+    invalidateSuggestionRequests()
     onQueryChange(suggestion.name)
     setSuggestions([])
     setSearchUnavailable(false)
     setHighlightedSuggestionId(null)
     onLocationSelect(suggestion.lng, suggestion.lat, suggestion.name)
-  }, [onLocationSelect, onQueryChange])
+  }, [invalidateSuggestionRequests, onLocationSelect, onQueryChange])
 
   const visibleSuggestions = useMemo(() => {
     return canShowSuggestions ? suggestions : []
@@ -338,7 +350,12 @@ export function SearchPill({
               )
             })
           ) : (
-            <p className="px-4 py-3 text-xs text-muted-foreground">
+            <p
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              className="px-4 py-3 text-xs text-muted-foreground"
+            >
               Search temporarily unavailable
             </p>
           )}
