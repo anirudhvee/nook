@@ -1,5 +1,5 @@
-import type { SearchSuggestion } from './searchTypes'
-import { normalizeSearchText } from './searchPillMatch'
+import { normalizeSearchText } from '@/components/map/searchPillMatch'
+import type { SearchSuggestion } from '@/components/map/searchTypes'
 
 function readSuggestionText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''

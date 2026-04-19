@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { SearchSuggestion } from '../../../../components/map/searchTypes'
-import { findDirectMatchSuggestion, normalizeSearchText } from '../../../../components/map/searchPillMatch'
+import { findDirectMatchSuggestion, normalizeSearchText } from '@/components/map/searchPillMatch'
+import type { SearchSuggestion } from '@/components/map/searchTypes'
 
 function makeSuggestion(overrides: Partial<SearchSuggestion>): SearchSuggestion {
   return {

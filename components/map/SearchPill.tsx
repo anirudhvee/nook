@@ -3,12 +3,10 @@
 import { useRef, useState, useCallback, useEffect, useId, useMemo } from 'react'
 import { Search, X, ArrowLeft } from 'lucide-react'
 import { LogoWordmark } from '@/components/LogoWordmark'
+import { findDirectMatchSuggestion } from '@/components/map/searchPillMatch'
+import { getSuggestionSubtitle } from '@/components/map/searchPillSuggestionText'
+import type { SearchSuggestion } from '@/components/map/searchTypes'
 import { cn } from '@/lib/utils'
-import { findDirectMatchSuggestion } from './searchPillMatch'
-import { getSuggestionSubtitle } from './searchPillSuggestionText'
-import type { SearchSuggestion } from './searchTypes'
-
-const SUGGESTION_LIMIT = 5
 
 type SelectedLocation = {
   lng: number
@@ -114,18 +112,24 @@ export function SearchPill({
       }
 
       const response = await fetch(`/api/nooks?${params.toString()}`)
-      if (!response.ok) throw new Error('suggestion request failed')
       const payload = (await response.json()) as {
         suggestions?: SearchSuggestion[]
         unavailable?: boolean
       }
       if (requestId !== suggestionRequestIdRef.current) return
+
+      if (!response.ok) {
+        setSuggestions([])
+        setSearchUnavailable(Boolean(payload.unavailable) || true)
+        return
+      }
+
       setSuggestions(payload.suggestions ?? [])
       setSearchUnavailable(Boolean(payload.unavailable))
     } catch {
       if (requestId !== suggestionRequestIdRef.current) return
       setSuggestions([])
-      setSearchUnavailable(false)
+      setSearchUnavailable(true)
     }
   }, [])
 

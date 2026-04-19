@@ -1,6 +1,6 @@
-import type { SearchSuggestion } from './searchTypes'
-import { normalizeSearchText } from './searchPillMatch'
-import { findStreetTypeIndex } from './searchPillTokens'
+import { normalizeSearchText } from '@/components/map/searchPillMatch'
+import { findStreetTypeIndex } from '@/components/map/searchPillTokens'
+import type { SearchSuggestion } from '@/components/map/searchTypes'
 
 export type SuggestionFallback = {
   addressTokens: string[]
@@ -47,12 +47,9 @@ function findAddressSegment(tokens: string[]): AddressSegment | null {
   if (streetTypeIndex < 0) return null
 
   while (streetTypeIndex >= 0) {
-    let shouldContinue = false
-
     for (let tokenIndex = streetTypeIndex - 1; tokenIndex >= searchStartIndex; tokenIndex -= 1) {
       if (isHouseNumberToken(tokens[tokenIndex] ?? '')) {
         if (looksLikeStreetNameAbbreviation(tokens, streetTypeIndex)) {
-          shouldContinue = true
           break
         }
 
@@ -61,11 +58,6 @@ function findAddressSegment(tokens: string[]): AddressSegment | null {
           streetTypeIndex,
         }
       }
-    }
-
-    if (shouldContinue) {
-      streetTypeIndex = findStreetTypeIndex(tokens, streetTypeIndex + 1)
-      continue
     }
 
     streetTypeIndex = findStreetTypeIndex(tokens, streetTypeIndex + 1)

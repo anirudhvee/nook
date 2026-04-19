@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { SearchSuggestion } from '../../../../components/map/searchTypes'
 import {
   buildAddressFallbackQuery,
   buildPartialAddressFallbackQuery,
@@ -8,7 +7,8 @@ import {
   mergeSuggestionResults,
   mergeSuggestions,
   resolvePrimaryThenOptionalFallback,
-} from '../../../../components/map/searchPillQuery'
+} from '@/components/map/searchPillQuery'
+import type { SearchSuggestion } from '@/components/map/searchTypes'
 
 function makeSuggestion(id: string): SearchSuggestion {
   return {

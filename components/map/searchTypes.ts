@@ -117,7 +117,6 @@ function trimLeadingSegment(value: string, segment: string): string {
 
 function buildPlaceFormatted(
   result: GeoapifyAutocompleteResult,
-  primaryLabel: string,
   streetAddress: string
 ): string {
   const addressLine2 = result.address_line2?.trim()
@@ -202,24 +201,23 @@ export function toSearchSuggestion(result: GeoapifyAutocompleteResult): SearchSu
     featureType === 'poi' ? '' : streetAddress,
     result.address_line1,
     fallbackLabel,
-  ])
+  ]) || 'Unknown location'
   const address = firstDefined([
     streetAddress,
     result.address_line1 && result.address_line1.trim() !== name ? result.address_line1 : '',
     featureType === 'poi' ? '' : fallbackLabel,
   ])
   const fullAddress = result.formatted.trim()
-  const placeFormatted = buildPlaceFormatted(
-    result,
-    firstDefined([result.address_line1, name, fallbackLabel]),
-    streetAddress
-  )
+  const placeFormatted = buildPlaceFormatted(result, streetAddress)
   const placeId = String(
     result.place_id
       ?? result.datasource?.raw?.place_id
       ?? result.datasource?.raw?.osm_id
       ?? fullAddress
   )
+  const placeName = firstDefined([result.city, result.town, result.village, result.municipality, result.hamlet])
+  const districtName = firstDefined([result.county, result.district])
+  const neighborhoodName = firstDefined([result.neighbourhood, result.neighborhood])
 
   return {
     id: [
@@ -249,29 +247,17 @@ export function toSearchSuggestion(result: GeoapifyAutocompleteResult): SearchSu
             region_code: result.state_code,
           }
         : undefined,
-      place: firstDefined([result.city, result.town, result.village, result.municipality, result.hamlet])
-        ? {
-            name: firstDefined([result.city, result.town, result.village, result.municipality, result.hamlet]),
-          }
-        : undefined,
+      place: placeName ? { name: placeName } : undefined,
       locality: result.suburb
         ? {
             name: result.suburb,
           }
         : undefined,
-      district: firstDefined([result.county, result.district])
-        ? {
-            name: firstDefined([result.county, result.district]),
-          }
-        : undefined,
-      neighborhood: firstDefined([result.neighbourhood, result.neighborhood])
-        ? {
-            name: firstDefined([result.neighbourhood, result.neighborhood]),
-          }
-        : undefined,
+      district: districtName ? { name: districtName } : undefined,
+      neighborhood: neighborhoodName ? { name: neighborhoodName } : undefined,
       postcode: result.postcode
         ? {
-            name: result.postcode,
+          name: result.postcode,
           }
         : undefined,
     },

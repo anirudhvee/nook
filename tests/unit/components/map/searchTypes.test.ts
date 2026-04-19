@@ -3,7 +3,7 @@ import test from 'node:test'
 import {
   toSearchSuggestion,
   type GeoapifyAutocompleteResult,
-} from '../../../../components/map/searchTypes'
+} from '@/components/map/searchTypes'
 
 test('toSearchSuggestion normalizes Geoapify POI results into searchable suggestions', () => {
   const result: GeoapifyAutocompleteResult = {

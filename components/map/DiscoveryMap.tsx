@@ -76,6 +76,18 @@ type MapWithProjectionInternals = maplibregl.Map & {
   }
 }
 
+declare global {
+  interface Window {
+    __globeRim?: {
+      centerX: number
+      centerY: number
+      radius: number
+      plane: number[]
+      normalDotCenter: number
+    }
+  }
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
@@ -187,7 +199,7 @@ function keepCompactAttributionClosedUntilInteraction(map: maplibregl.Map) {
   const container = map.getContainer()
   let compactAttribution: HTMLElement | null = null
   let compactButton: HTMLElement | null = null
-  let collapseTimer: number | null = null
+  let compactObserver: MutationObserver | null = null
 
   let allowOpen = false
 
@@ -199,17 +211,11 @@ function keepCompactAttributionClosedUntilInteraction(map: maplibregl.Map) {
 
   const handleClick = () => {
     allowOpen = true
-    if (collapseTimer !== null) {
-      window.clearInterval(collapseTimer)
-      collapseTimer = null
-    }
   }
 
   const disconnectCompactAttribution = () => {
-    if (collapseTimer !== null) {
-      window.clearInterval(collapseTimer)
-      collapseTimer = null
-    }
+    compactObserver?.disconnect()
+    compactObserver = null
     compactButton?.removeEventListener('click', handleClick)
   }
 
@@ -227,7 +233,11 @@ function keepCompactAttributionClosedUntilInteraction(map: maplibregl.Map) {
     compactButton.addEventListener('click', handleClick, { once: true })
     collapse()
     requestAnimationFrame(collapse)
-    collapseTimer = window.setInterval(collapse, 100)
+    compactObserver = new MutationObserver(collapse)
+    compactObserver.observe(compactAttribution, {
+      attributes: true,
+      attributeFilter: ['class', 'open'],
+    })
   }
 
   const containerObserver = new MutationObserver(() => {
@@ -282,20 +292,14 @@ function updateGlobeRim(map: maplibregl.Map, root: HTMLElement) {
   root.style.setProperty('--globe-rim-radius', `${circle.radius.toFixed(1)}px`)
   root.style.setProperty('--globe-rim-opacity', opacity.toFixed(3))
 
-  ;(window as Window & {
-    __globeRim?: {
-      centerX: number
-      centerY: number
-      radius: number
-      plane: number[]
-      normalDotCenter: number
+  if (process.env.NODE_ENV === 'development') {
+    window.__globeRim = {
+      centerX: circle.x,
+      centerY: circle.y,
+      radius: circle.radius,
+      plane: [...plane],
+      normalDotCenter: dot(normal, center),
     }
-  }).__globeRim = {
-    centerX: circle.x,
-    centerY: circle.y,
-    radius: circle.radius,
-    plane: [...plane],
-    normalDotCenter: dot(normal, center),
   }
 }
 

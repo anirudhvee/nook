@@ -12,6 +12,7 @@ import {
 } from '@/components/map/searchTypes'
 
 const GEOAPIFY_AUTOCOMPLETE_URL = 'https://api.geoapify.com/v1/geocode/autocomplete'
+const AUTOCOMPLETE_REVALIDATE_SECONDS = 600
 const SUGGESTION_LIMIT = 5
 
 type SuggestionFetchResult = {
@@ -66,7 +67,7 @@ async function fetchGeoapifySuggestions(
       Accept: 'application/json',
     },
     next: {
-      revalidate: 3600,
+      revalidate: AUTOCOMPLETE_REVALIDATE_SECONDS,
     },
   })
 
@@ -129,7 +130,10 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ suggestions, unavailable: false })
   } catch {
-    return NextResponse.json({ error: 'Failed to fetch search suggestions' }, { status: 502 })
+    return NextResponse.json(
+      { suggestions: [] as SearchSuggestion[], unavailable: true },
+      { status: 502 }
+    )
   }
 }
 

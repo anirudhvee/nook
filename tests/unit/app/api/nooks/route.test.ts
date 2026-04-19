@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { NextRequest } from 'next/server'
-import { GET } from '../../../../../app/api/nooks/route'
+import { GET } from '@/app/api/nooks/route'
 
 test('GET passes proximity bias to Geoapify and returns normalized suggestions', async () => {
   const originalFetch = global.fetch
