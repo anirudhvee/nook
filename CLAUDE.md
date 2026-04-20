@@ -17,6 +17,7 @@ A web-first app for finding places to work from — cafés, libraries, hotel lob
 | Styling | Tailwind CSS + shadcn/ui |
 | Database + Auth | Supabase (Postgres + Supabase Auth — Google OAuth + email magic link, no passwords) |
 | Maps rendering | MapLibre GL JS |
+| Geocoding + autocomplete | Geoapify |
 | Venue data | Google Places API |
 | Review data | Google Places API (New) — `reviewSummary`, `generativeSummary`, `reviews` |
 | AI | OpenAI API (gpt-4o-mini) |
@@ -114,6 +115,7 @@ There is **not yet** a standardized `npm test` script on `main`; current lightwe
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
+GEOAPIFY_API_KEY=
 GOOGLE_PLACES_API_KEY=
 OPENAI_API_KEY=
 ```
