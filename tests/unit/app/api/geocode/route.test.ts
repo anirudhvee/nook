@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { NextRequest } from 'next/server'
-import { GET } from '@/app/api/nooks/route'
+import { GET } from '@/app/api/geocode/route'
 
 test('GET passes proximity bias to Geoapify and returns normalized suggestions', async () => {
   const originalFetch = global.fetch
@@ -44,7 +44,7 @@ test('GET passes proximity bias to Geoapify and returns normalized suggestions',
   }) as typeof fetch
 
   try {
-    const request = new NextRequest('http://localhost:3000/api/nooks?q=starbucks&lat=37.7749&lng=-122.4194', {
+    const request = new NextRequest('http://localhost:3000/api/geocode?q=starbucks&lat=37.7749&lng=-122.4194', {
       headers: {
         'accept-language': 'en-US,en;q=0.9',
       },
@@ -76,7 +76,7 @@ test('GET returns a temporary unavailable state when Geoapify quota is exhausted
   }) as typeof fetch
 
   try {
-    const request = new NextRequest('http://localhost:3000/api/nooks?q=starbucks')
+    const request = new NextRequest('http://localhost:3000/api/geocode?q=starbucks')
     const response = await GET(request)
     const payload = await response.json()
 

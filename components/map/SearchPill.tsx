@@ -119,7 +119,7 @@ export function SearchPill({
         params.set('lng', String(loc[0]))
       }
 
-      const response = await fetch(`/api/nooks?${params.toString()}`)
+      const response = await fetch(`/api/geocode?${params.toString()}`)
       if (requestId !== suggestionRequestIdRef.current) return
 
       if (!response.ok) {

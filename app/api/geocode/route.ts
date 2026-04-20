@@ -92,12 +92,12 @@ async function fetchGeoapifySuggestions(
   }
 }
 
-// Reserved route on main.
+// Geoapify-backed geocoding proxy for map search autocomplete.
 // Venue discovery is sourced from Google Places nearby search rather than user-submitted nooks.
 export async function GET(request: NextRequest) {
   const query = request.nextUrl.searchParams.get('q')?.trim() ?? ''
   if (!query) {
-    return NextResponse.json({ message: 'Nooks API — not yet implemented' }, { status: 501 })
+    return NextResponse.json({ message: 'Geocode API — not yet implemented' }, { status: 501 })
   }
 
   if (query.length < 3) {
@@ -138,5 +138,5 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST() {
-  return NextResponse.json({ message: 'Nooks API — not yet implemented' }, { status: 501 })
+  return NextResponse.json({ message: 'Geocode API — not implemented for POST' }, { status: 501 })
 }
