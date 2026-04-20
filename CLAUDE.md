@@ -44,7 +44,7 @@ nook/
 │   └── api/              # API routes
 │       ├── places/       # Google Places (New) proxy — nearby search
 │       ├── places/[id]/  # Google Places (New) detail — reviews, hours, summary
-│       ├── nooks/        # Reserved / deprecated placeholder — not part of the main product flow
+│       ├── geocode/      # Geoapify geocoding proxy — powers search autocomplete only
 │       ├── reviews/      # (stub — unused on main; active on feature/apify-reviews)
 │       └── ai/           # OpenAI work-signal parsing + Supabase cache
 ├── components/           # Shared UI components
