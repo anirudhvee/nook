@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient } from '@/lib/supabase-admin'
 
@@ -8,9 +9,10 @@ interface SeedTriggerBody {
   cityName?: unknown
 }
 
-interface SeededRegionRow {
+interface SeededRegionClaimRow {
   status: 'pending' | 'seeding' | 'complete' | 'failed'
   venue_count: number | null
+  should_dispatch: boolean
 }
 
 function parseBbox(value: string): [number, number, number, number] | null {
@@ -40,6 +42,17 @@ function getSeedSecret(request: NextRequest): string | null {
     request.headers.get('seed-trigger-secret') ??
     request.headers.get('x-seed-trigger-secret')
   )
+}
+
+function compareSeedSecret(receivedSecret: string | null, configuredSecret: string) {
+  if (!receivedSecret) {
+    return false
+  }
+
+  const receivedHash = createHash('sha256').update(receivedSecret).digest()
+  const configuredHash = createHash('sha256').update(configuredSecret).digest()
+
+  return timingSafeEqual(receivedHash, configuredHash)
 }
 
 function getClientIp(request: NextRequest): string | null {
@@ -99,7 +112,7 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  if (getSeedSecret(request) !== configuredSecret) {
+  if (!compareSeedSecret(getSeedSecret(request), configuredSecret)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -135,47 +148,27 @@ export async function POST(request: NextRequest) {
       : null
 
   const supabase = createAdminSupabaseClient()
-  const { data: existingRegion, error: existingError } = await supabase
-    .from('seeded_regions')
-    .select('status, venue_count')
-    .eq('bbox_key', bboxKey)
-    .maybeSingle<SeededRegionRow>()
-
-  if (existingError) {
-    return NextResponse.json({ error: existingError.message }, { status: 500 })
-  }
-
-  if (
-    existingRegion &&
-    ['pending', 'seeding', 'complete'].includes(existingRegion.status)
-  ) {
-    return NextResponse.json({
-      status: existingRegion.status === 'complete' ? 'complete' : 'seeding',
-      message:
-        existingRegion.status === 'complete'
-          ? 'This area has already been seeded.'
-          : 'Finding nooks in this area...',
-      venueCount: existingRegion.venue_count ?? 0,
+  const { data: claimedRegion, error: claimError } = await supabase
+    .rpc('claim_seeded_region', {
+      p_bbox_key: bboxKey,
+      p_city_name: cityName,
+      p_triggered_by_ip: getClientIp(request),
     })
+    .single<SeededRegionClaimRow>()
+
+  if (claimError || !claimedRegion) {
+    return NextResponse.json(
+      { error: claimError?.message ?? 'Unable to claim seeded region.' },
+      { status: 500 },
+    )
   }
 
-  const { error: seedRegionError } = await supabase
-    .from('seeded_regions')
-    .upsert(
-      {
-        bbox_key: bboxKey,
-        city_name: cityName,
-        status: 'pending',
-        venue_count: 0,
-        triggered_at: new Date().toISOString(),
-        completed_at: null,
-        triggered_by_ip: getClientIp(request),
-      },
-      { onConflict: 'bbox_key' },
-    )
-
-  if (seedRegionError) {
-    return NextResponse.json({ error: seedRegionError.message }, { status: 500 })
+  if (!claimedRegion.should_dispatch) {
+    return NextResponse.json({
+      status: 'seeding',
+      message: 'Finding nooks in this area...',
+      venueCount: claimedRegion.venue_count ?? 0,
+    })
   }
 
   let dispatchResponse: Response

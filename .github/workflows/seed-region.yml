@@ -46,11 +46,29 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          BBOX: ${{ inputs.bbox }}
         run: |
+          NORMALIZED_BBOX="$(python - "$BBOX" <<'PY'
+          import sys
+
+          parts = [float(part.strip()) for part in sys.argv[1].split(",")]
+          if len(parts) != 4:
+              raise SystemExit("bbox must have four numeric parts")
+          print(",".join(f"{part:.2f}" for part in parts))
+          PY
+          )"
+          COMPLETED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          PAYLOAD="$(python - "$COMPLETED_AT" <<'PY'
+          import json
+          import sys
+
+          print(json.dumps({"status": "failed", "completed_at": sys.argv[1]}))
+          PY
+          )"
           curl -s --fail -X PATCH \
-            "${SUPABASE_URL}/rest/v1/seeded_regions?bbox_key=eq.${{ inputs.bbox }}" \
+            "${SUPABASE_URL}/rest/v1/seeded_regions?bbox_key=eq.${NORMALIZED_BBOX}" \
             -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
             -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
             -H "Content-Type: application/json" \
             -H "Prefer: return=minimal" \
-            -d '{"status": "failed"}'
+            -d "$PAYLOAD"

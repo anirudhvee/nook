@@ -484,6 +484,7 @@ def mark_region(
         "venue_count": venue_count,
     }
     if status == "seeding":
+        payload["triggered_at"] = utc_now()
         payload["completed_at"] = None
     if status in {"complete", "failed"}:
         payload["completed_at"] = utc_now()
