@@ -12,6 +12,7 @@ interface SeedTriggerBody {
 interface SeededRegionClaimRow {
   status: 'pending' | 'seeding' | 'complete' | 'failed'
   venue_count: number | null
+  triggered_at: string
   should_dispatch: boolean
 }
 
@@ -76,26 +77,37 @@ function getWorkflowRef(): string {
 async function markRegionFailed(
   bbox: string,
   cityName: string | null,
+  claimTriggeredAt: string,
   message: string,
 ) {
   const supabase = createAdminSupabaseClient()
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('seeded_regions')
-    .upsert(
+    .update(
       {
-        bbox_key: bbox,
         city_name: cityName,
         status: 'failed',
         completed_at: new Date().toISOString(),
       },
-      { onConflict: 'bbox_key' },
     )
+    .eq('bbox_key', bbox)
+    .eq('triggered_at', claimTriggeredAt)
+    .select('bbox_key')
+    .maybeSingle()
 
   if (error) {
     console.error('Failed to mark seeded region as failed', {
       bbox,
       cityName,
+      claimTriggeredAt,
       error: error.message,
+      originalMessage: message,
+    })
+  } else if (!data) {
+    console.warn('Skipped marking seeded region as failed because claim is no longer active', {
+      bbox,
+      cityName,
+      claimTriggeredAt,
       originalMessage: message,
     })
   }
@@ -186,7 +198,7 @@ export async function POST(request: NextRequest) {
         body: JSON.stringify({
           ref: getWorkflowRef(),
           inputs: {
-            bbox: bboxKey,
+            bbox,
             city_name: cityName ?? '',
           },
         }),
@@ -194,7 +206,7 @@ export async function POST(request: NextRequest) {
     )
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to trigger seed workflow.'
-    return markRegionFailed(bboxKey, cityName, message)
+    return markRegionFailed(bboxKey, cityName, claimedRegion.triggered_at, message)
   }
 
   if (!dispatchResponse.ok) {
@@ -202,6 +214,7 @@ export async function POST(request: NextRequest) {
     return markRegionFailed(
       bboxKey,
       cityName,
+      claimedRegion.triggered_at,
       errorText || 'Unable to trigger seed workflow.',
     )
   }

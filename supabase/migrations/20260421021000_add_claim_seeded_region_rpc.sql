@@ -8,6 +8,7 @@ returns table (
   bbox_key text,
   status text,
   venue_count integer,
+  triggered_at timestamptz,
   should_dispatch boolean
 )
 language plpgsql
@@ -48,7 +49,7 @@ begin
     returning * into current_row;
 
     return query
-    select current_row.bbox_key, current_row.status, current_row.venue_count, true;
+    select current_row.bbox_key, current_row.status, current_row.venue_count, current_row.triggered_at, true;
     return;
   end if;
 
@@ -56,7 +57,7 @@ begin
     and current_row.triggered_at is not null
     and current_row.triggered_at >= now_utc - p_active_window then
     return query
-    select current_row.bbox_key, current_row.status, current_row.venue_count, false;
+    select current_row.bbox_key, current_row.status, current_row.venue_count, current_row.triggered_at, false;
     return;
   end if;
 
@@ -71,6 +72,6 @@ begin
   returning * into current_row;
 
   return query
-  select current_row.bbox_key, current_row.status, current_row.venue_count, true;
+  select current_row.bbox_key, current_row.status, current_row.venue_count, current_row.triggered_at, true;
 end;
 $$;
