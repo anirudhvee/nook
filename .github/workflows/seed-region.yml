@@ -1,0 +1,56 @@
+name: Seed Overture Region
+
+on:
+  workflow_dispatch:
+    inputs:
+      bbox:
+        description: "Bounding box as minx,miny,maxx,maxy"
+        required: true
+        type: string
+      city_name:
+        description: "Optional city or region label"
+        required: false
+        type: string
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade duckdb supabase httpx python-slugify
+
+      - name: Seed region
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          BBOX: ${{ inputs.bbox }}
+          CITY_NAME: ${{ inputs.city_name }}
+        run: |
+          if [ -n "$CITY_NAME" ]; then
+            python scripts/seed-overture.py --bbox "$BBOX" --city-name "$CITY_NAME"
+          else
+            python scripts/seed-overture.py --bbox "$BBOX"
+          fi
+
+      - name: Mark region failed on workflow error
+        if: failure()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          curl -s --fail -X PATCH \
+            "${SUPABASE_URL}/rest/v1/seeded_regions?bbox_key=eq.${{ inputs.bbox }}" \
+            -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=minimal" \
+            -d '{"status": "failed"}'
