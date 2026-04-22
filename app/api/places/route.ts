@@ -185,10 +185,7 @@ export async function GET(request: NextRequest) {
       status: seedResponse.status,
       body: text || null,
     })
-    return NextResponse.json(
-      { error: 'Unable to trigger seed workflow.' },
-      { status: 502 },
-    )
+    return NextResponse.json({ places: [], seeding: false })
   }
 
   let seedPayload: SeedTriggerPayload | null = null
