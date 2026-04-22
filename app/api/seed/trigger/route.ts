@@ -68,12 +68,16 @@ function getClientIp(request: NextRequest): string | null {
 }
 
 function getWorkflowRef(): string {
-  return (
+  const rawRef = (
     process.env.GITHUB_WORKFLOW_REF ??
     process.env.VERCEL_GIT_COMMIT_REF ??
     process.env.GITHUB_REF_NAME ??
     'main'
   )
+
+  return rawRef
+    .replace(/^refs\/heads\//, '')
+    .replace(/^refs\/tags\//, '')
 }
 
 async function markRegionFailed(

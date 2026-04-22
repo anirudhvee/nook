@@ -623,6 +623,7 @@ def mark_region(
     status: str,
     city_name: str | None,
     venue_count: int = 0,
+    refresh_triggered_at: bool = False,
 ) -> None:
     payload: dict[str, Any] = {
         "bbox_key": bbox_key,
@@ -631,12 +632,26 @@ def mark_region(
         "venue_count": venue_count,
     }
     if status == "seeding":
-        payload["triggered_at"] = utc_now()
         payload["completed_at"] = None
+        if refresh_triggered_at:
+            payload["triggered_at"] = utc_now()
     if status in {"complete", "failed"}:
         payload["completed_at"] = utc_now()
 
-    supabase.table("seeded_regions").upsert(payload, on_conflict="bbox_key").execute()
+    if status == "seeding" and not refresh_triggered_at:
+        result = (
+            supabase.table("seeded_regions")
+            .update(payload)
+            .eq("bbox_key", bbox_key)
+            .select("bbox_key")
+            .maybe_single()
+            .execute()
+        )
+        if not result.data:
+            payload["triggered_at"] = utc_now()
+            supabase.table("seeded_regions").insert(payload).execute()
+    else:
+        supabase.table("seeded_regions").upsert(payload, on_conflict="bbox_key").execute()
 
 
 def seed_region(
