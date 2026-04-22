@@ -336,7 +336,7 @@ export function AuthControls({ variant, showPassport = true, passportIcon = fals
             className="flex size-10 items-center justify-center rounded-full border border-white/60 bg-white/90 shadow backdrop-blur-sm transition-colors hover:bg-white"
             aria-label="My passport"
           >
-            <img
+            <Image
               src="/icons/passport.png"
               alt=""
               width={22}

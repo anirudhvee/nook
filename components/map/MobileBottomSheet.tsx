@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, useCallback, useEffect } from 'react'
+import { useRef, useState, useCallback, useEffect, useLayoutEffect } from 'react'
 import { cn } from '@/lib/utils'
 
 export type SnapPoint = 'peek' | 'half' | 'full'
@@ -66,8 +66,10 @@ export function MobileBottomSheet({ snapPoint, onSnapChange, children }: Props) 
   const onSnapChangeRef   = useRef(onSnapChange)
   const viewportHeightRef = useRef<number | null>(null)
 
-  snapPointRef.current  = snapPoint
-  onSnapChangeRef.current = onSnapChange
+  useLayoutEffect(() => {
+    snapPointRef.current = snapPoint
+    onSnapChangeRef.current = onSnapChange
+  }, [onSnapChange, snapPoint])
 
   useEffect(() => {
     const syncViewportHeight = () => {
@@ -87,12 +89,6 @@ export function MobileBottomSheet({ snapPoint, onSnapChange, children }: Props) 
       window.visualViewport?.removeEventListener('resize', syncViewportHeight)
     }
   }, [])
-
-  useEffect(() => {
-    if (settlingSnap === snapPoint) {
-      setSettlingSnap(null)
-    }
-  }, [settlingSnap, snapPoint])
 
   const startDrag = useCallback((startY: number) => {
     const currentViewportHeight = viewportHeightRef.current ?? readViewportHeight()
@@ -156,7 +152,7 @@ export function MobileBottomSheet({ snapPoint, onSnapChange, children }: Props) 
       )
     }
 
-    setSettlingSnap(next)
+    setSettlingSnap(next === snapPointRef.current ? null : next)
     dragPxRef.current = null
     setDragPx(null)
     onSnapChangeRef.current(next)
@@ -178,6 +174,11 @@ export function MobileBottomSheet({ snapPoint, onSnapChange, children }: Props) 
   const handleTouchCancel = useCallback(() => {
     finishDrag(true)
   }, [finishDrag])
+
+  const handleTransitionEnd = useCallback((e: React.TransitionEvent<HTMLDivElement>) => {
+    if (e.target !== e.currentTarget || e.propertyName !== 'transform') return
+    setSettlingSnap(null)
+  }, [])
 
   useEffect(() => {
     const el = contentRef.current
@@ -262,6 +263,7 @@ export function MobileBottomSheet({ snapPoint, onSnapChange, children }: Props) 
           : `translateY(${translateY})`,
         willChange: 'transform',
       }}
+      onTransitionEnd={handleTransitionEnd}
     >
       <div
         className="shrink-0 flex flex-col items-center pt-2 pb-1 touch-none select-none cursor-grab active:cursor-grabbing"
