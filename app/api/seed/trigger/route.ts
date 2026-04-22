@@ -205,17 +205,33 @@ export async function POST(request: NextRequest) {
       },
     )
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unable to trigger seed workflow.'
-    return markRegionFailed(bboxKey, cityName, claimedRegion.triggered_at, message)
-  }
-
-  if (!dispatchResponse.ok) {
-    const errorText = await dispatchResponse.text()
+    console.error('GitHub workflow dispatch request failed', {
+      bbox: bboxKey,
+      cityName,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    })
     return markRegionFailed(
       bboxKey,
       cityName,
       claimedRegion.triggered_at,
-      errorText || 'Unable to trigger seed workflow.',
+      'Unable to trigger seed workflow.',
+    )
+  }
+
+  if (!dispatchResponse.ok) {
+    const errorText = await dispatchResponse.text()
+    console.error('GitHub workflow dispatch failed', {
+      bbox: bboxKey,
+      cityName,
+      status: dispatchResponse.status,
+      statusText: dispatchResponse.statusText,
+      error: errorText || null,
+    })
+    return markRegionFailed(
+      bboxKey,
+      cityName,
+      claimedRegion.triggered_at,
+      'Unable to trigger seed workflow.',
     )
   }
 

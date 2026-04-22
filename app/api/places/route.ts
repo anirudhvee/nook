@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient } from '@/lib/supabase-admin'
+import { createServerSupabaseClient } from '@/lib/supabase-server'
 import type { FilterType, NookPlace, NookType } from '@/types/nook'
 
 const DEFAULT_LAT = 37.7749
@@ -106,6 +107,16 @@ async function triggerSeed(request: NextRequest, bbox: string): Promise<Response
   })
 }
 
+async function canTriggerSeedForRequest(): Promise<boolean> {
+  const supabase = await createServerSupabaseClient()
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser()
+
+  return !error && Boolean(user)
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl
   const lat = parseNumber(searchParams.get('lat'), DEFAULT_LAT)
@@ -139,8 +150,21 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ places })
   }
 
+  if (!(await canTriggerSeedForRequest())) {
+    return NextResponse.json({ places: [] })
+  }
+
   const bbox = bboxForRadius(lat, lng, radius)
-  const seedResponse = await triggerSeed(request, bbox)
+  let seedResponse: Response
+  try {
+    seedResponse = await triggerSeed(request, bbox)
+  } catch (error) {
+    console.warn('Skipping seed trigger for empty places search', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+    })
+    return NextResponse.json({ places: [] })
+  }
+
   if (!seedResponse.ok) {
     const text = await seedResponse.text()
     return NextResponse.json(
