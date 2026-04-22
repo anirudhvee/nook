@@ -1153,6 +1153,12 @@ export function DiscoveryMap({
         if (mapSyncModeRef.current === 'search') {
           mapSyncModeRef.current = 'nearby'
         }
+        const target = resolveNearbyRestoreTarget()
+        void loadNearbyPlaces(target, filter, {
+          forceMapUpdate: true,
+          mapTarget: 'nearby',
+          updateMap: true,
+        })
       }
       return
     }
@@ -1194,6 +1200,8 @@ export function DiscoveryMap({
     fitToCircle,
     isRadiusActive,
     loadSearchedPlaces,
+    loadNearbyPlaces,
+    resolveNearbyRestoreTarget,
     urlSearchLocation,
     urlSearchLocationKey,
     urlSelectedNookSlug,
