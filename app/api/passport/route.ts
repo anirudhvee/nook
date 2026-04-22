@@ -1,29 +1,57 @@
 import { NextResponse } from 'next/server'
-import { fetchGooglePlacePreview } from '@/lib/google-places'
 import {
+  buildPassportLocationLine,
   groupPassportVisits,
+  type PassportPlacePreview,
   type PassportStampRecord,
   type PassportVisitRow,
 } from '@/lib/passport'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import type { NookType } from '@/types/nook'
 
-async function fetchInBatches<T>(
-  ids: string[],
-  batchSize: number,
-  fn: (id: string) => Promise<T>,
-): Promise<Array<readonly [string, T]>> {
-  const results: Array<readonly [string, T]> = []
+type PassportNookRow = {
+  id: string
+  slug: string
+  name: string
+  address: string | null
+  city: string | null
+  region: string | null
+  country: string | null
+  type: NookType | string | null
+  lat: number | null
+  lng: number | null
+}
 
-  for (let index = 0; index < ids.length; index += batchSize) {
-    const batch = ids.slice(index, index + batchSize)
-    const batchResults = await Promise.all(
-      batch.map(async id => [id, await fn(id)] as const),
-    )
+interface PassportStampRow extends PassportVisitRow {
+  nook: PassportNookRow | PassportNookRow[] | null
+}
 
-    results.push(...batchResults)
+function toNookType(value: string | null): NookType {
+  if (value === 'cafe' || value === 'library' || value === 'coworking') return value
+  return 'other'
+}
+
+function toPassportPlacePreview(
+  row: PassportNookRow,
+): PassportPlacePreview {
+  return {
+    id: row.id,
+    slug: row.slug,
+    name: row.name,
+    address: row.address,
+    city: row.city,
+    region: row.region,
+    country: row.country,
+    locationLine: buildPassportLocationLine(row),
+    type: toNookType(row.type),
+    lat: row.lat,
+    lng: row.lng,
   }
+}
 
-  return results
+function firstRelation<T>(value: T | T[] | null | undefined): T | null {
+  if (Array.isArray(value)) return value[0] ?? null
+  return value ?? null
 }
 
 export async function GET() {
@@ -42,7 +70,23 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from('stamps')
-    .select('id, nook_id, stamped_at')
+    .select(`
+      id,
+      nook_id,
+      stamped_at,
+      nook:nooks (
+        id,
+        slug,
+        name,
+        address,
+        city,
+        region,
+        country,
+        type,
+        lat,
+        lng
+      )
+    `)
     .eq('user_id', user.id)
     .order('stamped_at', { ascending: false })
 
@@ -50,16 +94,21 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  const visitRows = (data ?? []) as PassportVisitRow[]
+  const stampRows = (data ?? []) as PassportStampRow[]
+  const visitRows: PassportVisitRow[] = stampRows.map(row => ({
+    id: row.id,
+    nook_id: row.nook_id,
+    stamped_at: row.stamped_at,
+  }))
   const groupedStamps = groupPassportVisits(visitRows)
 
-  const stampPreviewEntries = await fetchInBatches(
-    groupedStamps.map(stamp => stamp.nookId),
-    5,
-    fetchGooglePlacePreview,
+  const previewMap = new Map(
+    stampRows.flatMap(row => {
+      const nook = firstRelation(row.nook)
+      if (!nook) return []
+      return [[row.nook_id, toPassportPlacePreview(nook)] as const]
+    }),
   )
-
-  const previewMap = new Map(stampPreviewEntries)
   const stamps: PassportStampRecord[] = groupedStamps.map(stamp => ({
     ...stamp,
     place: previewMap.get(stamp.nookId) ?? null,

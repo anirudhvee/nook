@@ -93,7 +93,7 @@ async function fetchGeoapifySuggestions(
 }
 
 // Geoapify-backed geocoding proxy for map search autocomplete.
-// Venue discovery is sourced from Google Places nearby search rather than user-submitted nooks.
+// Venue discovery is sourced from Supabase-backed Overture nooks.
 export async function GET(request: NextRequest) {
   const query = request.nextUrl.searchParams.get('q')?.trim() ?? ''
   if (!query) {

@@ -1,12 +1,9 @@
 'use client'
 
 import { Bebas_Neue } from 'next/font/google'
-import Image from 'next/image'
 import Link from 'next/link'
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowUpRight, MapPinned, Ticket } from 'lucide-react'
-import { PlacePhotoAttribution } from '@/components/place/PlacePhotoAttribution'
-import { buildPlacePhotoUrl } from '@/lib/place-photo'
 import type { PassportStampRecord } from '@/lib/passport'
 import { cn } from '@/lib/utils'
 
@@ -180,25 +177,7 @@ export function PassportPageClient({
               >
                 <div className="passport-stamp-perforated" style={stampMaskStyle}>
                   <div className="relative aspect-[0.68] overflow-hidden">
-                    {place?.photo ? (
-                      <>
-                        <Image
-                          src={buildPlacePhotoUrl(place.photo.ref, 1200)}
-                          alt={title}
-                          fill
-                          sizes={isCompact ? '(min-width: 1280px) 26vw, 92vw' : '(min-width: 1280px) 22vw, (min-width: 768px) 42vw, 92vw'}
-                          unoptimized
-                          className="object-cover transition-transform duration-500 group-hover:scale-[1.03]"
-                        />
-                        <PlacePhotoAttribution
-                          attributions={place.photo.authorAttributions}
-                          compact
-                          linkToSource={false}
-                        />
-                      </>
-                    ) : (
-                      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.12),_transparent_36%),linear-gradient(160deg,_rgba(111,90,70,0.92),_rgba(45,35,28,0.98))]" />
-                    )}
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.12),_transparent_36%),linear-gradient(160deg,_rgba(111,90,70,0.92),_rgba(45,35,28,0.98))]" />
 
                     <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(40,31,24,0)_0%,rgba(40,31,24,0.04)_28%,rgba(31,24,18,0.55)_52%,rgba(25,19,14,0.88)_72%,rgba(22,16,12,0.95)_100%)]" />
 
@@ -275,7 +254,7 @@ export function PassportPageClient({
                       {stamp.visitsCount} {stamp.visitsCount === 1 ? 'visit' : 'visits'}
                     </p>
                     <Link
-                      href={`/nook/${encodeURIComponent(stamp.nookId)}`}
+                      href={`/nook/${encodeURIComponent(place?.slug ?? stamp.nookId)}`}
                       className="inline-flex items-center gap-1 text-xs font-medium text-primary transition-colors hover:underline"
                     >
                       open nook
