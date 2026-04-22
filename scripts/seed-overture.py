@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import argparse
+import math
 import os
+import re
 import sys
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -156,6 +159,50 @@ TYPE_BY_CATEGORY = {
 }
 
 BATCH_SIZE = 250
+DEDUP_DISTANCE_METERS = 50.0
+
+NAME_STOPWORDS = frozenset({
+    "a",
+    "an",
+    "and",
+    "at",
+    "by",
+    "co",
+    "for",
+    "from",
+    "in",
+    "of",
+    "on",
+    "the",
+    "to",
+})
+MISSING_ADDRESS_VALUES = frozenset({"n/a", "na", "none", "null", "unknown", "unnamed road"})
+ADDRESS_RISK_PATTERNS = tuple(
+    re.compile(pattern)
+    for pattern in (
+        r"\bairport\b",
+        r"\bterminal\b",
+        r"\bmall\b",
+        r"\bcampus\b",
+        r"\bstation\b",
+        r"\bconcourse\b",
+        r"\bfood\s+court\b",
+        r"\bshopping\s+cent(?:er|re)\b",
+        r"\brailway\s+station\b",
+        r"\bmetro\s+station\b",
+        r"\blevel\b",
+        r"\bfloor\b",
+        r"\bunit\b",
+    )
+)
+CONTACT_FIELDS = ("website", "phone", "social", "email")
+MERGEABLE_DUPLICATE_FIELDS = (
+    *CONTACT_FIELDS,
+    "brand_name",
+    "city",
+    "region",
+    "country",
+)
 
 
 def utc_now() -> str:
@@ -273,6 +320,106 @@ def choose_slug(row: dict[str, Any]) -> str:
 def google_maps_url(name: str, address: str | None) -> str:
     query = " ".join(part.strip() for part in [name, address or ""] if part.strip())
     return f"https://www.google.com/maps/search/{quote_plus(query)}"
+
+
+def normalize_match_text(value: Any) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(character for character in text if not unicodedata.combining(character))
+    text = text.casefold().replace("&", " and ")
+    text = re.sub(r"[^\w\s]+", " ", text, flags=re.UNICODE)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def name_signature(name: Any) -> str | None:
+    tokens = [
+        token
+        for token in normalize_match_text(name).split()
+        if token not in NAME_STOPWORDS
+    ]
+    if not tokens:
+        return None
+    return " ".join(sorted(tokens))
+
+
+def normalized_usable_address(address: Any) -> str | None:
+    normalized = normalize_match_text(address)
+    if not normalized or normalized in MISSING_ADDRESS_VALUES:
+        return None
+    if len(normalized) < 4 or normalized.isdigit():
+        return None
+    return normalized
+
+
+def has_risky_dedupe_address(normalized_address: str) -> bool:
+    return any(pattern.search(normalized_address) for pattern in ADDRESS_RISK_PATTERNS)
+
+
+def coordinate_distance_meters(first: dict[str, Any], second: dict[str, Any]) -> float:
+    first_lat = float(first["lat"])
+    first_lng = float(first["lng"])
+    second_lat = float(second["lat"])
+    second_lng = float(second["lng"])
+    lat_delta = math.radians(second_lat - first_lat)
+    lng_delta = math.radians(second_lng - first_lng)
+    start_lat = math.radians(first_lat)
+    end_lat = math.radians(second_lat)
+    haversine = (
+        math.sin(lat_delta / 2) ** 2
+        + math.cos(start_lat) * math.cos(end_lat) * math.sin(lng_delta / 2) ** 2
+    )
+    return 6371000 * 2 * math.atan2(math.sqrt(haversine), math.sqrt(1 - haversine))
+
+
+def duplicate_row_quality(row: dict[str, Any]) -> tuple[int, int, float, int, int, str]:
+    contact_count = sum(1 for field in CONTACT_FIELDS if row.get(field))
+    active_score = 1 if row.get("operating_status") == "active" else 0
+    confidence = float(row.get("confidence") or 0)
+    address_length = len(str(row.get("address") or ""))
+    name_length = len(str(row.get("name") or ""))
+    overture_id = str(row.get("overture_id") or "")
+    return contact_count, active_score, confidence, address_length, name_length, overture_id
+
+
+def merge_duplicate_metadata(kept: dict[str, Any], duplicate: dict[str, Any]) -> None:
+    for field in MERGEABLE_DUPLICATE_FIELDS:
+        if not kept.get(field) and duplicate.get(field):
+            kept[field] = duplicate[field]
+
+
+def dedupe_nook_rows(nook_rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+    buckets: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    kept_row_ids: set[int] = set()
+
+    for row in nook_rows:
+        signature = name_signature(row.get("name"))
+        address = normalized_usable_address(row.get("address"))
+        if not signature or not address or has_risky_dedupe_address(address):
+            kept_row_ids.add(id(row))
+            continue
+        buckets.setdefault((str(row["type"]), signature, address), []).append(row)
+
+    removed_count = 0
+    for bucket in buckets.values():
+        kept_rows: list[dict[str, Any]] = []
+        for row in sorted(bucket, key=duplicate_row_quality, reverse=True):
+            duplicate_of = next(
+                (
+                    kept
+                    for kept in kept_rows
+                    if coordinate_distance_meters(row, kept) <= DEDUP_DISTANCE_METERS
+                ),
+                None,
+            )
+            if duplicate_of is None:
+                kept_rows.append(row)
+                continue
+
+            merge_duplicate_metadata(duplicate_of, row)
+            removed_count += 1
+
+        kept_row_ids.update(id(row) for row in kept_rows)
+
+    return [row for row in nook_rows if id(row) in kept_row_ids], removed_count
 
 
 def build_nook_rows(
@@ -511,6 +658,9 @@ def seed_region(
 
         nook_rows = build_nook_rows(rows, release, seed_run_id)
         print(f"Prepared {len(nook_rows)} nooks after normalization")
+        nook_rows, duplicate_count = dedupe_nook_rows(nook_rows)
+        if duplicate_count:
+            print(f"Removed {duplicate_count} likely duplicate nooks before upsert")
 
         overture_to_nook_id = upsert_nooks(supabase, nook_rows)
         upsert_nook_details(supabase, nook_rows, overture_to_nook_id)
