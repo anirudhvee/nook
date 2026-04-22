@@ -124,7 +124,7 @@ SEED_TRIGGER_SECRET=
 
 GitHub Actions also needs repo secrets:
 
-```
+```bash
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
 ```
