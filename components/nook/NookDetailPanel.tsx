@@ -149,6 +149,20 @@ function formatWebsiteLabel(website: string): string {
   }
 }
 
+function normalizeExternalUrl(value: string | null | undefined): string | null {
+  const trimmed = value?.trim()
+  if (!trimmed) return null
+
+  const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+
+  try {
+    const url = new URL(candidate)
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : null
+  } catch {
+    return null
+  }
+}
+
 export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLift }: Props) {
   const [supabase] = useState(() => createBrowserSupabaseClient())
   const [detail, setDetail] = useState<NookDetail | null>(null)
@@ -289,11 +303,13 @@ export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLif
   const website = detail?.website ?? nook.website
   const phone = detail?.phone ?? nook.phone
   const locationLabel = formatLocation(city, region, country)
-  const googleMapsUrl =
+  const websiteUrl = normalizeExternalUrl(website)
+  const googleMapsUrl = normalizeExternalUrl(
     detail?.nook_details?.google_maps_url ??
     detail?.google_maps_url ??
     detail?.googleMapsUrl ??
-    null
+    null,
+  )
   const signalSummary = detail?.workSignalSummary ?? detail?.work_signal_summary ?? null
   const signals = buildWorkSignals(signalSummary)
   const workSummary = detail?.reviewSummary?.text?.text ?? null
@@ -302,7 +318,7 @@ export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLif
     (signalSummary && signalSummary.report_count > 0
       ? `Based on ${signalSummary.report_count} community report${signalSummary.report_count === 1 ? '' : 's'}`
       : null)
-  const hasDetails = Boolean(address || website || phone || googleMapsUrl)
+  const hasDetails = Boolean(address || websiteUrl || phone || googleMapsUrl)
   const hasVisits = checkInSummary.visitsCount > 0
   const firstVisitedLabel = formatCheckInDate(checkInSummary.firstVisitedAt)
   const showLoadingSkeleton = fetching && !detail
@@ -417,15 +433,15 @@ export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLif
                 </div>
               )}
 
-              {website && (
+              {websiteUrl && (
                 <a
-                  href={website}
+                  href={websiteUrl}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noreferrer noopener"
                   className="flex items-center gap-2.5 text-sm text-primary transition-colors hover:underline"
                 >
                   <Globe className="h-4 w-4 shrink-0" />
-                  {formatWebsiteLabel(website)}
+                  {formatWebsiteLabel(websiteUrl)}
                 </a>
               )}
 
@@ -443,7 +459,7 @@ export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLif
                 <a
                   href={googleMapsUrl}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noreferrer noopener"
                   className="flex items-center gap-2.5 text-sm text-primary transition-colors hover:underline"
                 >
                   <Clock className="h-4 w-4 shrink-0" />

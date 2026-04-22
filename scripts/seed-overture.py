@@ -308,7 +308,7 @@ def query_overture(
 
 def choose_slug(row: dict[str, Any]) -> str:
     overture_id = str(row["overture_id"])
-    suffix = overture_id[-4:] if len(overture_id) >= 4 else overture_id
+    suffix = overture_id[-8:] if len(overture_id) >= 8 else overture_id
     name_slug = slugify(str(row.get("name") or ""))
     city_slug = slugify(str(row.get("city") or row.get("country") or ""))
     base = name_slug if name_slug else city_slug if city_slug else "nook"

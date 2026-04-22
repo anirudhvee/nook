@@ -253,13 +253,15 @@ export function PassportPageClient({
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                       {stamp.visitsCount} {stamp.visitsCount === 1 ? 'visit' : 'visits'}
                     </p>
-                    <Link
-                      href={`/nook/${encodeURIComponent(place?.slug ?? stamp.nookId)}`}
-                      className="inline-flex items-center gap-1 text-xs font-medium text-primary transition-colors hover:underline"
-                    >
-                      open nook
-                      <ArrowUpRight className="h-3 w-3" />
-                    </Link>
+                    {place?.slug ? (
+                      <Link
+                        href={`/nook/${encodeURIComponent(place.slug)}`}
+                        className="inline-flex items-center gap-1 text-xs font-medium text-primary transition-colors hover:underline"
+                      >
+                        open nook
+                        <ArrowUpRight className="h-3 w-3" />
+                      </Link>
+                    ) : null}
                   </div>
 
                   <div className="mt-2 space-y-1.5">

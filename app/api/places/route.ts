@@ -8,6 +8,7 @@ const DEFAULT_LNG = -122.4194
 const DEFAULT_RADIUS_METERS = 1500
 const MAX_RADIUS_METERS = 50000
 const METERS_PER_DEGREE_LAT = 111000
+const SEED_TRIGGER_TIMEOUT_MS = 10_000
 
 const FILTERS = new Set<FilterType>(['all', 'cafe', 'library', 'coworking', 'other'])
 const NOOK_TYPES = new Set<NookType>(['cafe', 'library', 'coworking', 'other'])
@@ -28,6 +29,10 @@ interface NearbyNookRow {
   phone: string | null
   operating_status: string
   seed_run_id: string | null
+}
+
+interface SeedTriggerPayload {
+  status?: string
 }
 
 function parseNumber(value: string | null, fallback: number): number {
@@ -97,14 +102,22 @@ async function triggerSeed(request: NextRequest, bbox: string): Promise<Response
     throw new Error('Seed trigger secret is not configured.')
   }
 
-  return fetch(new URL('/api/seed/trigger', request.nextUrl.origin), {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-seed-trigger-secret': seedSecret,
-    },
-    body: JSON.stringify({ bbox }),
-  })
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), SEED_TRIGGER_TIMEOUT_MS)
+
+  try {
+    return await fetch(new URL('/api/seed/trigger', request.nextUrl.origin), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-seed-trigger-secret': seedSecret,
+      },
+      body: JSON.stringify({ bbox }),
+      signal: controller.signal,
+    })
+  } finally {
+    clearTimeout(timeout)
+  }
 }
 
 async function canTriggerSeedForRequest(): Promise<boolean> {
@@ -141,7 +154,8 @@ export async function GET(request: NextRequest) {
   })
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    console.error('Nearby nook search failed', { error: error.message })
+    return NextResponse.json({ error: 'Unable to search nearby nooks.' }, { status: 500 })
   }
 
   const places = ((data ?? []) as NearbyNookRow[]).map(toNookPlace)
@@ -167,11 +181,25 @@ export async function GET(request: NextRequest) {
 
   if (!seedResponse.ok) {
     const text = await seedResponse.text()
+    console.warn('Seed trigger failed for empty places search', {
+      status: seedResponse.status,
+      body: text || null,
+    })
     return NextResponse.json(
-      { error: text || 'Unable to trigger seed workflow.' },
+      { error: 'Unable to trigger seed workflow.' },
       { status: 502 },
     )
   }
 
-  return NextResponse.json({ places: [], seeding: true })
+  let seedPayload: SeedTriggerPayload | null = null
+  try {
+    seedPayload = await seedResponse.json() as SeedTriggerPayload
+  } catch {
+    seedPayload = null
+  }
+
+  return NextResponse.json({
+    places: [],
+    seeding: seedPayload?.status === 'pending' || seedPayload?.status === 'seeding',
+  })
 }

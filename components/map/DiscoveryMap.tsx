@@ -657,9 +657,10 @@ export function DiscoveryMap({
   const urlSearchLocationKey = getSearchLocationKey(urlSearchLocation)
   const isPassportOpen = isPassportPath(pathname)
   const urlSelectedNookSlug = getSelectedNookSlugFromUrl(pathname)
-  const routeBootCenter: [number, number] | null = initialSelectedNook
-    ? [initialSelectedNook.lng, initialSelectedNook.lat]
-    : null
+  const routeBootCenter = useMemo<[number, number] | null>(
+    () => initialSelectedNook ? [initialSelectedNook.lng, initialSelectedNook.lat] : null,
+    [initialSelectedNook],
+  )
   const globeCanvasRef = useRef<HTMLCanvasElement>(null)
   const globeStarsRef = useRef<GlobeStar[]>([])
   if (globeStarsRef.current.length === 0) {
@@ -1143,7 +1144,16 @@ export function DiscoveryMap({
     previousUrlSelectedNookSlugRef.current = urlSelectedNookSlug
 
     if (!urlSearchLocation || !urlSearchLocationKey) {
-      hydratedSearchUrlKeyRef.current = null
+      if (hydratedSearchUrlKeyRef.current) {
+        hydratedSearchUrlKeyRef.current = null
+        selectedSearchLocationRef.current = null
+        setSelectedSearchLocation(null)
+        setSearchQuery('')
+        setIsSearchOpen(false)
+        if (mapSyncModeRef.current === 'search') {
+          mapSyncModeRef.current = 'nearby'
+        }
+      }
       return
     }
 
@@ -1871,7 +1881,7 @@ export function DiscoveryMap({
       mapRef.current = null
       mapLoadedRef.current = false
     }
-  }, [handleSelectNook, isSearchRouteActive, loadNearbyPlaces, loadSearchedPlaces])
+  }, [handleSelectNook, isSearchRouteActive, loadNearbyPlaces, loadSearchedPlaces, routeBootCenter])
 
   useEffect(() => {
     nooksRef.current = mapNooks
