@@ -195,17 +195,18 @@ export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLif
   useEffect(() => {
     let cancelled = false
     const controller = new AbortController()
+    setDetail(null)
+    setFetching(true)
 
     async function loadPanelData() {
-      setDetail(null)
-      setFetching(true)
-
       try {
         const response = await fetch(`/api/places/${encodeURIComponent(nook.slug)}`, {
           signal: controller.signal,
         })
 
-        if (!response.ok) return
+        if (!response.ok) {
+          return
+        }
 
         const data = (await response.json()) as NookDetail
         if (!cancelled) {
@@ -214,9 +215,7 @@ export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLif
       } catch (error) {
         if (isAbortError(error)) return
       } finally {
-        if (!cancelled) {
-          setFetching(false)
-        }
+        if (!cancelled) setFetching(false)
       }
     }
 
@@ -306,6 +305,7 @@ export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLif
   const hasDetails = Boolean(address || website || phone || googleMapsUrl)
   const hasVisits = checkInSummary.visitsCount > 0
   const firstVisitedLabel = formatCheckInDate(checkInSummary.firstVisitedAt)
+  const showLoadingSkeleton = fetching && !detail
 
   async function handleCheckIn() {
     if (!user) {
@@ -364,7 +364,7 @@ export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLif
             onClick={onPeekLift}
             className="flex w-full items-center justify-between gap-3 text-left transition-colors hover:text-foreground"
           >
-            {fetching ? (
+            {showLoadingSkeleton ? (
               <div className="h-5 w-3/4 animate-pulse rounded bg-muted" />
             ) : (
               <h2 className="min-w-0 flex-1 break-words text-base font-semibold leading-snug">{nook.name}</h2>
@@ -383,7 +383,7 @@ export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLif
               <ArrowLeft className="h-4 w-4" />
             </button>
 
-            {fetching ? (
+            {showLoadingSkeleton ? (
               <div className="h-5 w-3/4 animate-pulse rounded bg-muted" />
             ) : (
               <h2 className="min-w-0 flex-1 break-words text-base font-semibold leading-snug">{nook.name}</h2>
@@ -454,12 +454,12 @@ export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLif
           </div>
         )}
 
-        {(fetching || workSummary) && (
+        {((showLoadingSkeleton && !workSummary) || workSummary) && (
           <div className="rounded-xl border border-border bg-card p-3">
             <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               work summary
             </p>
-            {fetching ? (
+            {showLoadingSkeleton ? (
               <div className="space-y-2">
                 <div className="h-3 w-full animate-pulse rounded bg-muted" />
                 <div className="h-3 w-5/6 animate-pulse rounded bg-muted" />
@@ -476,12 +476,12 @@ export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLif
           </div>
         )}
 
-        {(fetching || signals.length > 0) && (
+        {((showLoadingSkeleton && signals.length === 0) || signals.length > 0) && (
           <div>
             <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               work signals
             </p>
-            {fetching ? (
+            {showLoadingSkeleton ? (
               <div className="flex flex-wrap gap-2">
                 <div className="h-7 w-24 animate-pulse rounded-full bg-muted" />
                 <div className="h-7 w-28 animate-pulse rounded-full bg-muted" />

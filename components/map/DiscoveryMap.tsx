@@ -347,6 +347,25 @@ function getSearchLocationKey(location: SearchLocation | null): string | null {
   return location ? `${location.name}|${location.lat}|${location.lng}` : null
 }
 
+function readCachedUserLocation(): [number, number] | null {
+  if (typeof window === 'undefined') return null
+
+  try {
+    const stored = window.localStorage.getItem('nook_loc')
+    if (!stored) return null
+
+    const parsed = JSON.parse(stored) as { lng: number; lat: number; ts?: number }
+    if (!Number.isFinite(parsed.lng) || !Number.isFinite(parsed.lat)) return null
+    if (typeof parsed.ts === 'number' && Date.now() - parsed.ts >= 30 * 24 * 60 * 60 * 1000) {
+      return null
+    }
+
+    return [parsed.lng, parsed.lat]
+  } catch {
+    return null
+  }
+}
+
 type PlacesPanelProps = {
   title: string
   loading: boolean
@@ -619,7 +638,16 @@ function PlacesPanel({
   )
 }
 
-export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number] }) {
+export function DiscoveryMap({
+  initialCenter,
+  initialSelectedNook = null,
+}: {
+  initialCenter: [number, number]
+  initialSelectedNook?: NookPlace | null
+}) {
+  const restoredNearbyOrigin = typeof window === 'undefined'
+    ? null
+    : readCachedUserLocation()
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const urlSearchLocation = useMemo(
@@ -629,6 +657,9 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
   const urlSearchLocationKey = getSearchLocationKey(urlSearchLocation)
   const isPassportOpen = isPassportPath(pathname)
   const urlSelectedNookSlug = getSelectedNookSlugFromUrl(pathname)
+  const routeBootCenter: [number, number] | null = initialSelectedNook
+    ? [initialSelectedNook.lng, initialSelectedNook.lat]
+    : null
   const globeCanvasRef = useRef<HTMLCanvasElement>(null)
   const globeStarsRef = useRef<GlobeStar[]>([])
   if (globeStarsRef.current.length === 0) {
@@ -636,11 +667,11 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
   }
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
-  const initialCenterRef = useRef<[number, number]>(initialCenter)
+  const initialCenterRef = useRef<[number, number]>(restoredNearbyOrigin ?? initialCenter)
   const mapLoadedRef = useRef(false)
-  const realUserLocRef = useRef<[number, number] | null>(null)
-  const nearbyOriginRef = useRef<[number, number] | null>(null)
-  const selectedSearchLocationRef = useRef<SearchLocation | null>(null)
+  const realUserLocRef = useRef<[number, number] | null>(restoredNearbyOrigin)
+  const nearbyOriginRef = useRef<[number, number] | null>(restoredNearbyOrigin)
+  const selectedSearchLocationRef = useRef<SearchLocation | null>(urlSearchLocation)
   const nooksRef = useRef<NookPlace[]>([])
   const pointMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
   const passportMarkersRef = useRef<maplibregl.Marker[]>([])
@@ -648,16 +679,18 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
   const passportRotationTokenRef = useRef(0)
   const passportOpenRef = useRef(false)
   const passportCloseHandledRef = useRef(false)
-  const selectedIdRef = useRef<string | null>(null)
-  const detailNookRef = useRef<NookPlace | null>(null)
+  const selectedIdRef = useRef<string | null>(initialSelectedNook?.id ?? null)
+  const detailNookRef = useRef<NookPlace | null>(initialSelectedNook)
   const requestedNookIdRef = useRef<string | null>(null)
   const primaryColorRef = useRef(COLOR_NORMAL)
   const darkerPrimaryRef = useRef(COLOR_SELECTED)
-  const mapSyncModeRef = useRef<'nearby' | 'search' | 'frozen'>('nearby')
+  const mapSyncModeRef = useRef<'nearby' | 'search' | 'frozen'>(
+    urlSearchLocation ? 'search' : 'nearby',
+  )
   const nearbyRequestIdRef = useRef(0)
   const searchedRequestIdRef = useRef(0)
-  const hydratedSearchUrlKeyRef = useRef<string | null>(null)
-  const previousUrlSelectedNookSlugRef = useRef<string | null>(null)
+  const hydratedSearchUrlKeyRef = useRef<string | null>(urlSearchLocationKey)
+  const previousUrlSelectedNookSlugRef = useRef<string | null>(urlSelectedNookSlug)
   const radiusMRef = useRef(DEFAULT_RADIUS_M)
   const geolocateIsAutoTriggerRef = useRef(false)
   const geoBtnPatchedRef = useRef(false)
@@ -672,18 +705,18 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
   const [nearbyNooks, setNearbyNooks] = useState<NookPlace[]>([])
   const [searchedNooks, setSearchedNooks] = useState<NookPlace[]>([])
   const [mapNooks, setMapNooks] = useState<NookPlace[]>([])
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [detailNook, setDetailNook] = useState<NookPlace | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(() => initialSelectedNook?.id ?? null)
+  const [detailNook, setDetailNook] = useState<NookPlace | null>(() => initialSelectedNook)
   const [filter, setFilter] = useState<FilterType>('all')
-  const [realUserLoc, setRealUserLoc] = useState<[number, number] | null>(null)
-  const [nearbyOrigin, setNearbyOrigin] = useState<[number, number] | null>(null)
+  const [realUserLoc, setRealUserLoc] = useState<[number, number] | null>(() => restoredNearbyOrigin)
+  const [nearbyOrigin, setNearbyOrigin] = useState<[number, number] | null>(() => restoredNearbyOrigin)
   const [nearbyLoading, setNearbyLoading] = useState(false)
   const [searchedLoading, setSearchedLoading] = useState(false)
   const [nearbySeeding, setNearbySeeding] = useState(false)
   const [searchedSeeding, setSearchedSeeding] = useState(false)
-  const [isSearchOpen, setIsSearchOpen] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [selectedSearchLocation, setSelectedSearchLocation] = useState<SearchLocation | null>(null)
+  const [isSearchOpen, setIsSearchOpen] = useState(() => Boolean(urlSearchLocation))
+  const [searchQuery, setSearchQuery] = useState(() => urlSearchLocation?.name ?? '')
+  const [selectedSearchLocation, setSelectedSearchLocation] = useState<SearchLocation | null>(() => urlSearchLocation)
   const [useMiles, setUseMiles] = useState(() => {
     if (typeof navigator === 'undefined') return false
     return navigator.language === 'en-US'
@@ -1019,6 +1052,30 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     }
   }, [fetchPlaces])
 
+  const isSearchRouteActive = useCallback(() => {
+    return mapSyncModeRef.current === 'search' && selectedSearchLocationRef.current !== null
+  }, [])
+
+  const resolveNearbyRestoreTarget = useCallback((): [number, number] => {
+    const restored =
+      realUserLocRef.current ??
+      nearbyOriginRef.current ??
+      readCachedUserLocation() ??
+      initialCenterRef.current
+
+    if (!realUserLocRef.current && restored) {
+      realUserLocRef.current = restored
+      setRealUserLoc(current => current ?? restored)
+    }
+
+    if (!nearbyOriginRef.current && restored) {
+      nearbyOriginRef.current = restored
+      setNearbyOrigin(current => current ?? restored)
+    }
+
+    return restored
+  }, [])
+
   const collapseSearch = useCallback(() => {
     setIsSearchOpen(false)
     if (isMobileRef.current) setMobileSheetSnap('half')
@@ -1034,20 +1091,10 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     setMapNooks(searchedNooks)
   }, [searchedNooks, selectedSearchLocation])
 
-  const clearSearchSelection = useCallback(() => {
-    clearSelectedNook()
-    mapSyncModeRef.current = 'nearby'
-    setMapNooks(nearbyNooks)
-    setIsSearchOpen(false)
-    setSearchQuery('')
-    setSelectedSearchLocation(null)
-    invalidateSearchedResults()
-    if (isMobileRef.current) setMobileSheetSnap('half')
-  }, [clearSelectedNook, invalidateSearchedResults, nearbyNooks])
-
   const beginEditingSelectedLocation = useCallback(() => {
     clearSelectedNook()
     mapSyncModeRef.current = 'frozen'
+    selectedSearchLocationRef.current = null
     setSelectedSearchLocation(null)
     invalidateSearchedResults()
   }, [clearSelectedNook, invalidateSearchedResults])
@@ -1069,6 +1116,26 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     const zoom = Math.max(11, Math.min(13, camera.zoom ?? 12))
     map.easeTo({ center: camera.center ?? center, zoom, duration: 300 })
   }, [getCurrentViewportHeight])
+
+  const clearSearchSelection = useCallback(() => {
+    clearSelectedNook()
+    mapSyncModeRef.current = 'nearby'
+    hydratedSearchUrlKeyRef.current = null
+    selectedSearchLocationRef.current = null
+    setSelectedSearchLocation(null)
+    setSearchQuery('')
+    setIsSearchOpen(false)
+    invalidateSearchedResults()
+
+    const target = resolveNearbyRestoreTarget()
+    void loadNearbyPlaces(target, filter, {
+      forceMapUpdate: true,
+      mapTarget: 'nearby',
+      updateMap: true,
+    })
+
+    if (isMobileRef.current) setMobileSheetSnap('half')
+  }, [clearSelectedNook, filter, invalidateSearchedResults, loadNearbyPlaces, resolveNearbyRestoreTarget])
 
   useEffect(() => {
     const movedFromSelectedNookToSearch =
@@ -1134,9 +1201,14 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
   const restoreNearbyView = useCallback(() => {
     clearSelectedNook()
     mapSyncModeRef.current = 'nearby'
+    hydratedSearchUrlKeyRef.current = null
+    selectedSearchLocationRef.current = null
+    setSelectedSearchLocation(null)
+    setSearchQuery('')
     setIsSearchOpen(false)
+    invalidateSearchedResults()
 
-    const target = realUserLocRef.current ?? nearbyOriginRef.current ?? initialCenterRef.current
+    const target = resolveNearbyRestoreTarget()
     if (isRadiusActive) {
       fitToCircle(target, radiusMRef.current)
     } else {
@@ -1147,7 +1219,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
       mapTarget: 'nearby',
       updateMap: true,
     })
-  }, [clearSelectedNook, filter, fitToCircle, isRadiusActive, loadNearbyPlaces])
+  }, [clearSelectedNook, filter, fitToCircle, invalidateSearchedResults, isRadiusActive, loadNearbyPlaces, resolveNearbyRestoreTarget])
 
   const applySelectedNook = useCallback((nook: NookPlace) => {
     if (selectedIdRef.current && selectedIdRef.current !== nook.id) {
@@ -1342,6 +1414,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
 
     const location = { lng, lat, name }
     hydratedSearchUrlKeyRef.current = getSearchLocationKey(location)
+    selectedSearchLocationRef.current = location
     setSearchQuery(name)
     setSelectedSearchLocation(location)
     setIsSearchOpen(true)
@@ -1404,6 +1477,22 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
 
     if (detailNookRef.current?.slug === slug) {
       requestedNookIdRef.current = null
+      const restoredNook = detailNookRef.current
+      const map = mapRef.current
+      if (restoredNook && map && mapLoadedRef.current) {
+        const center = map.getCenter()
+        const centerDistance = distanceM(
+          [center.lat, center.lng],
+          [restoredNook.lat, restoredNook.lng],
+        )
+        if (centerDistance > 50 || map.getZoom() < 14.5) {
+          map.flyTo({
+            center: [restoredNook.lng, restoredNook.lat],
+            zoom: 15,
+            speed: 1.8,
+          })
+        }
+      }
       return
     }
 
@@ -1464,7 +1553,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
           })
         }
       } else {
-        const target = realUserLocRef.current ?? nearbyOriginRef.current ?? initialCenterRef.current
+        const target = resolveNearbyRestoreTarget()
         if (isRadiusActive) {
           fitToCircle(target, radiusMRef.current)
         } else {
@@ -1477,24 +1566,16 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
         }
       }
     }
-  }, [getCurrentViewportHeight, isPassportOpen, stopPassportRotation, clearPassportMarkers, showNearbyMarkers, fitToCircle, isRadiusActive])
+  }, [getCurrentViewportHeight, isPassportOpen, stopPassportRotation, clearPassportMarkers, showNearbyMarkers, fitToCircle, isRadiusActive, resolveNearbyRestoreTarget])
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return
 
-    let cachedCenter: [number, number] | null = null
-    try {
-      const stored = localStorage.getItem('nook_loc')
-      if (stored) {
-        const { lng, lat, ts } = JSON.parse(stored) as { lng: number; lat: number; ts: number }
-        if (Date.now() - ts < 30 * 24 * 60 * 60 * 1000 && isFinite(lng) && isFinite(lat)) {
-          cachedCenter = [lng, lat]
-        }
-      }
-    } catch {}
-
-    const startCenter = cachedCenter ?? initialCenterRef.current
-    const startZoom = cachedCenter ? 14 : 10
+    const cachedCenter = readCachedUserLocation()
+    const nearbyBaseCenter = cachedCenter ?? initialCenterRef.current
+    const startCenter = routeBootCenter ?? nearbyBaseCenter
+    const startZoom = routeBootCenter ? 15 : (cachedCenter ? 14 : 10)
+    initialCenterRef.current = nearbyBaseCenter
 
     const root = document.documentElement
     const map = new maplibregl.Map({
@@ -1558,14 +1639,12 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
       setNearbyOrigin(coords)
 
       const movedSignificantly = distanceM(
-        [startCenter[1], startCenter[0]],
+        [nearbyBaseCenter[1], nearbyBaseCenter[0]],
         [coords[1], coords[0]]
       ) > 200
 
-      if (movedSignificantly) {
-        if (mapSyncModeRef.current === 'nearby') {
-          map.flyTo({ center: coords, zoom: 14, duration: 1500 })
-        }
+      if (movedSignificantly && mapSyncModeRef.current === 'nearby') {
+        map.flyTo({ center: coords, zoom: 14, duration: 1500 })
         void loadNearbyPlaces(coords, 'all', { mapTarget: 'nearby', updateMap: true })
       }
     })
@@ -1756,10 +1835,11 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
         map.getCanvas().style.cursor = ''
       })
 
-      nearbyOriginRef.current = startCenter
-      setNearbyOrigin(startCenter)
-      if (selectedSearchLocationRef.current && mapSyncModeRef.current === 'search') {
-        void loadSearchedPlaces(selectedSearchLocationRef.current, 'all', {
+      nearbyOriginRef.current = nearbyBaseCenter
+      setNearbyOrigin(nearbyBaseCenter)
+      const activeSearchLocation = selectedSearchLocationRef.current
+      if (activeSearchLocation && isSearchRouteActive()) {
+        void loadSearchedPlaces(activeSearchLocation, 'all', {
           forceMapUpdate: true,
           mapTarget: 'search',
           updateMap: true,
@@ -1768,8 +1848,12 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
         void loadNearbyPlaces(startCenter, 'all', { mapTarget: 'nearby', updateMap: true })
       }
 
-      geolocateIsAutoTriggerRef.current = true
-      geolocate.trigger()
+      if (activeSearchLocation && isSearchRouteActive()) {
+        geolocateIsAutoTriggerRef.current = false
+      } else {
+        geolocateIsAutoTriggerRef.current = true
+        geolocate.trigger()
+      }
     })
 
     mapRef.current = map
@@ -1787,7 +1871,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
       mapRef.current = null
       mapLoadedRef.current = false
     }
-  }, [handleSelectNook, loadNearbyPlaces, loadSearchedPlaces])
+  }, [handleSelectNook, isSearchRouteActive, loadNearbyPlaces, loadSearchedPlaces])
 
   useEffect(() => {
     nooksRef.current = mapNooks
@@ -1821,10 +1905,11 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
       return
     }
 
-    const currentNearbyOrigin = nearbyOriginRef.current ?? initialCenterRef.current
     const currentSelectedSearchLocation = selectedSearchLocationRef.current
-
-    void loadNearbyPlaces(currentNearbyOrigin, filter, { mapTarget: 'nearby', updateMap: true })
+    if (!isSearchRouteActive()) {
+      const currentNearbyOrigin = nearbyOriginRef.current ?? initialCenterRef.current
+      void loadNearbyPlaces(currentNearbyOrigin, filter, { mapTarget: 'nearby', updateMap: true })
+    }
 
     if (currentSelectedSearchLocation) {
       void loadSearchedPlaces(currentSelectedSearchLocation, filter, {
@@ -1832,7 +1917,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
         updateMap: true,
       })
     }
-  }, [filter, loadNearbyPlaces, loadSearchedPlaces])
+  }, [filter, isSearchRouteActive, loadNearbyPlaces, loadSearchedPlaces])
 
   useEffect(() => {
     const map = mapRef.current
@@ -1858,12 +1943,14 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     if (!isRadiusActive) return
 
     const timer = setTimeout(() => {
-      const origin = nearbyOriginRef.current ?? initialCenterRef.current
-      void loadNearbyPlaces(origin, filter, {
-        mapTarget: 'nearby',
-        updateMap: mapSyncModeRef.current === 'nearby',
-        forceMapUpdate: mapSyncModeRef.current === 'nearby',
-      })
+      if (!isSearchRouteActive()) {
+        const origin = nearbyOriginRef.current ?? initialCenterRef.current
+        void loadNearbyPlaces(origin, filter, {
+          mapTarget: 'nearby',
+          updateMap: mapSyncModeRef.current === 'nearby',
+          forceMapUpdate: mapSyncModeRef.current === 'nearby',
+        })
+      }
       if (selectedSearchLocationRef.current) {
         void loadSearchedPlaces(selectedSearchLocationRef.current, filter, {
           mapTarget: 'search',
@@ -1874,7 +1961,7 @@ export function DiscoveryMap({ initialCenter }: { initialCenter: [number, number
     }, 250)
 
     return () => clearTimeout(timer)
-  }, [radiusM, isRadiusActive, filter, loadNearbyPlaces, loadSearchedPlaces])
+  }, [radiusM, isRadiusActive, filter, isSearchRouteActive, loadNearbyPlaces, loadSearchedPlaces])
 
   const searchBiasLocation = realUserLoc ?? nearbyOrigin
   const leftStackBottomPx = SIDEBAR_BOTTOM_PX + MAP_ATTRIBUTION_SAFE_AREA_PX

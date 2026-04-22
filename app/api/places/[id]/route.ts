@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { createAdminSupabaseClient } from '@/lib/supabase-admin'
 import type { NookType } from '@/types/nook'
 
@@ -208,10 +208,11 @@ function buildOpeningHours(communityHours: unknown):
 }
 
 export async function GET(
-  _request: NextRequest,
+  _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params
+
   const supabase = createAdminSupabaseClient()
 
   const { data, error } = await supabase
