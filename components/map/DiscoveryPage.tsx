@@ -22,6 +22,13 @@ type NookRow = {
   phone: string | null
   operating_status: string | null
   seed_run_id: string | null
+  nook_overrides?: {
+    address_override: string | null
+    operating_status_override: string | null
+  }[] | {
+    address_override: string | null
+    operating_status_override: string | null
+  } | null
 }
 
 function toNookType(value: string | null): NookType {
@@ -50,7 +57,11 @@ async function getInitialSelectedNook(slug?: string | null): Promise<NookPlace |
       website,
       phone,
       operating_status,
-      seed_run_id
+      seed_run_id,
+      nook_overrides (
+        address_override,
+        operating_status_override
+      )
     `)
     .eq('slug', slug)
     .maybeSingle()
@@ -58,6 +69,9 @@ async function getInitialSelectedNook(slug?: string | null): Promise<NookPlace |
   if (error || !data) return null
 
   const row = data as NookRow
+  const override = Array.isArray(row.nook_overrides)
+    ? (row.nook_overrides[0] ?? null)
+    : (row.nook_overrides ?? null)
   return {
     id: row.id,
     slug: row.slug,
@@ -66,13 +80,13 @@ async function getInitialSelectedNook(slug?: string | null): Promise<NookPlace |
     lat: row.lat,
     lng: row.lng,
     type: toNookType(row.type),
-    address: row.address,
+    address: override?.address_override ?? row.address,
     city: row.city,
     region: row.region,
     country: row.country,
     website: row.website,
     phone: row.phone,
-    operating_status: row.operating_status ?? 'active',
+    operating_status: override?.operating_status_override ?? row.operating_status ?? 'active',
     seed_run_id: row.seed_run_id,
   }
 }

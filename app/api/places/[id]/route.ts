@@ -13,6 +13,11 @@ type NookDetailsRow = {
   community_hours: unknown
 }
 
+type NookOverrideRow = {
+  address_override: string | null
+  operating_status_override: string | null
+}
+
 type WorkSignalSummaryRow = {
   report_count: number
   wifi_great: number
@@ -48,6 +53,7 @@ type NookRow = {
   city: string | null
   region: string | null
   country: string | null
+  nook_overrides?: NookOverrideRow | NookOverrideRow[] | null
   nook_details?: NookDetailsRow | NookDetailsRow[] | null
   work_signal_summary?: WorkSignalSummaryRow | WorkSignalSummaryRow[] | null
 }
@@ -234,6 +240,10 @@ export async function GET(
       city,
       region,
       country,
+      nook_overrides (
+        address_override,
+        operating_status_override
+      ),
       nook_details (
         google_maps_url,
         community_hours
@@ -268,12 +278,15 @@ export async function GET(
   }
 
   const row = data as NookRow
+  const override = firstRelation(row.nook_overrides)
   const nookType = toNookType(row.type)
   const details = firstRelation(row.nook_details)
   const signalSummary = firstRelation(row.work_signal_summary)
   const workSignals = buildWorkSignals(signalSummary)
   const reviewSummary = buildReviewSummary(signalSummary, workSignals)
   const regularOpeningHours = buildOpeningHours(details?.community_hours)
+  const effectiveAddress = override?.address_override ?? row.address
+  const effectiveOperatingStatus = override?.operating_status_override ?? row.operating_status ?? 'active'
 
   return NextResponse.json({
     id: row.id,
@@ -282,14 +295,14 @@ export async function GET(
     name: row.name,
     lat: row.lat,
     lng: row.lng,
-    address: row.address,
+    address: effectiveAddress,
     type: nookType,
     city: row.city,
     region: row.region,
     country: row.country,
     website: row.website,
     phone: row.phone,
-    operating_status: row.operating_status ?? 'active',
+    operating_status: effectiveOperatingStatus,
     seed_run_id: row.seed_run_id,
     neighborhood: row.neighborhood,
     google_maps_url: details?.google_maps_url ?? null,
@@ -299,7 +312,7 @@ export async function GET(
       text: row.name,
       languageCode: 'en',
     },
-    formattedAddress: row.address ?? '',
+    formattedAddress: effectiveAddress ?? '',
     addressComponents: buildAddressComponents(row),
     location: {
       latitude: row.lat,
