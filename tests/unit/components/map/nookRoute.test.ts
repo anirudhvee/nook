@@ -61,4 +61,7 @@ test('getSearchContextFromParams reads valid search context', () => {
 test('getSearchContextFromParams ignores missing or invalid search context', () => {
   assert.equal(getSearchContextFromParams(new URLSearchParams('q=Oakland%2C+CA&lat=200&lng=-122')), null)
   assert.equal(getSearchContextFromParams(new URLSearchParams('q=&lat=37&lng=-122')), null)
+  assert.equal(getSearchContextFromParams(new URLSearchParams('q=Oakland%2C+CA')), null)
+  assert.equal(getSearchContextFromParams(new URLSearchParams('q=Oakland%2C+CA&lat=&lng=-122')), null)
+  assert.equal(getSearchContextFromParams(new URLSearchParams('q=Oakland%2C+CA&lat=37')), null)
 })

@@ -62,8 +62,12 @@ export function getSearchContextFromParams(params: SearchParamsLike): NookSearch
   const name = params.get(SEARCH_QUERY_PARAM)?.trim()
   if (!name) return null
 
-  const lat = Number(params.get(SEARCH_LAT_PARAM))
-  const lng = Number(params.get(SEARCH_LNG_PARAM))
+  const latParam = params.get(SEARCH_LAT_PARAM)?.trim()
+  const lngParam = params.get(SEARCH_LNG_PARAM)?.trim()
+  if (!latParam || !lngParam) return null
+
+  const lat = Number(latParam)
+  const lng = Number(lngParam)
   if (!isValidCoordinate(lat, lng)) return null
 
   return { name, lat, lng }
