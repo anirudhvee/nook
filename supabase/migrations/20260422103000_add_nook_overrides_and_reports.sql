@@ -154,3 +154,11 @@ as $$
   order by distance_meters asc, nooks.name asc
   limit least(greatest(coalesce(p_limit, 100), 1), 100);
 $$;
+
+revoke execute on function public.search_nooks_nearby(
+  double precision,
+  double precision,
+  integer,
+  text,
+  integer
+) from public, anon, authenticated;

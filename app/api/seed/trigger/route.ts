@@ -153,7 +153,12 @@ export async function POST(request: NextRequest) {
 
   let body: SeedTriggerBody
   try {
-    body = (await request.json()) as SeedTriggerBody
+    const parsedBody = await request.json()
+    if (!parsedBody || typeof parsedBody !== 'object' || Array.isArray(parsedBody)) {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    }
+
+    body = parsedBody as SeedTriggerBody
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }

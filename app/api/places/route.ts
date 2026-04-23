@@ -42,6 +42,13 @@ function parseNumber(value: string | null, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
+function parseCoordinate(value: string | null): number | null {
+  if (value === null) return null
+
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
 function parseRadius(value: string | null): number {
   const parsed = Math.trunc(parseNumber(value, DEFAULT_RADIUS_METERS))
   return Math.min(Math.max(parsed, 1), MAX_RADIUS_METERS)
@@ -132,12 +139,23 @@ async function canTriggerSeedForRequest(): Promise<boolean> {
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl
-  const lat = parseNumber(searchParams.get('lat'), DEFAULT_LAT)
-  const lng = parseNumber(searchParams.get('lng'), DEFAULT_LNG)
+  const latParam = searchParams.get('lat')
+  const lngParam = searchParams.get('lng')
+  const parsedLat = parseCoordinate(latParam)
+  const parsedLng = parseCoordinate(lngParam)
+  const lat = latParam === null ? DEFAULT_LAT : parsedLat
+  const lng = lngParam === null ? DEFAULT_LNG : parsedLng
   const radius = parseRadius(searchParams.get('radius'))
   const filter = parseFilter(searchParams.get('type'))
 
-  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+  if (
+    lat === null ||
+    lng === null ||
+    lat < -90 ||
+    lat > 90 ||
+    lng < -180 ||
+    lng > 180
+  ) {
     return NextResponse.json(
       { error: 'lat and lng must be valid coordinates.' },
       { status: 400 },
