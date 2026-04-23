@@ -4,4 +4,4 @@ revoke execute on function public.search_nooks_nearby(
   integer,
   text,
   integer
-) from anon, authenticated;
+) from public, anon, authenticated;
