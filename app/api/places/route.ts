@@ -37,6 +37,7 @@ interface SeedTriggerPayload {
 
 function parseNumber(value: string | null, fallback: number): number {
   if (value === null) return fallback
+  if (value.trim() === '') return fallback
 
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : fallback
@@ -44,6 +45,7 @@ function parseNumber(value: string | null, fallback: number): number {
 
 function parseCoordinate(value: string | null): number | null {
   if (value === null) return null
+  if (value.trim() === '') return null
 
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : null

@@ -499,18 +499,29 @@ def upsert_nooks(supabase, nook_rows: list[dict[str, Any]]) -> dict[str, str]:
         overture_ids = [row["overture_id"] for row in batch]
         existing_rows = (
             supabase.table("nooks")
-            .select("id,overture_id")
+            .select("id,overture_id,slug")
             .in_("overture_id", overture_ids)
             .execute()
         )
-        existing_overture_ids = {
-            row["overture_id"]
+        existing_nooks_by_overture_id = {
+            row["overture_id"]: row
             for row in (existing_rows.data or [])
             if isinstance(row.get("overture_id"), str)
         }
+        existing_overture_ids = set(existing_nooks_by_overture_id)
 
         insert_rows = [row for row in batch if row["overture_id"] not in existing_overture_ids]
-        update_rows = [without_insert_only_seed_fields(row) for row in batch if row["overture_id"] in existing_overture_ids]
+        update_rows = []
+        for row in batch:
+            existing_row = existing_nooks_by_overture_id.get(row["overture_id"])
+            if not existing_row:
+                continue
+
+            update_row = without_insert_only_seed_fields(row)
+            existing_slug = existing_row.get("slug")
+            if isinstance(existing_slug, str) and existing_slug:
+                update_row["slug"] = existing_slug
+            update_rows.append(update_row)
 
         if update_rows:
             try:
