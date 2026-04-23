@@ -1591,8 +1591,11 @@ export function DiscoveryMap({
 
     const cachedCenter = readCachedUserLocation()
     const nearbyBaseCenter = cachedCenter ?? initialCenterRef.current
-    const startCenter = routeBootCenter ?? nearbyBaseCenter
-    const startZoom = routeBootCenter ? 15 : (cachedCenter ? 14 : 10)
+    const searchBootCenter: [number, number] | null = urlSearchLocation
+      ? [urlSearchLocation.lng, urlSearchLocation.lat]
+      : null
+    const startCenter = routeBootCenter ?? searchBootCenter ?? nearbyBaseCenter
+    const startZoom = routeBootCenter ? 15 : (searchBootCenter || cachedCenter ? 14 : 10)
     initialCenterRef.current = nearbyBaseCenter
 
     const root = document.documentElement
@@ -1889,7 +1892,7 @@ export function DiscoveryMap({
       mapRef.current = null
       mapLoadedRef.current = false
     }
-  }, [handleSelectNook, isSearchRouteActive, loadNearbyPlaces, loadSearchedPlaces, routeBootCenter])
+  }, [handleSelectNook, isSearchRouteActive, loadNearbyPlaces, loadSearchedPlaces, routeBootCenter, urlSearchLocation])
 
   useEffect(() => {
     nooksRef.current = mapNooks
