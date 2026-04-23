@@ -45,9 +45,9 @@ jobs:
           CLAIM_TRIGGERED_AT: ${{ inputs.claim_triggered_at }}
         run: |
           if [ -n "$CITY_NAME" ]; then
-            python scripts/seed-overture.py --bbox "$BBOX" --city-name "$CITY_NAME"
+            python scripts/seed-overture.py --bbox="$BBOX" --city-name "$CITY_NAME"
           else
-            python scripts/seed-overture.py --bbox "$BBOX"
+            python scripts/seed-overture.py --bbox="$BBOX"
           fi
 
       - name: Mark region failed on workflow error
