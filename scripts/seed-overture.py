@@ -653,14 +653,12 @@ def mark_region(
     if claim_triggered_at:
         query = (
             supabase.table("seeded_regions")
-            .update(payload)
+            .update(payload, count="exact")
             .eq("bbox_key", bbox_key)
             .eq("triggered_at", claim_triggered_at)
-            .select("bbox_key")
-            .maybe_single()
         )
         result = query.execute()
-        if not result.data:
+        if not result.count:
             print(
                 "Warning: skipped seeded_regions update for stale claim "
                 f"(bbox_key={bbox_key}, status={status}, triggered_at={claim_triggered_at})",
@@ -672,13 +670,11 @@ def mark_region(
     if status == "seeding" and not refresh_triggered_at:
         result = (
             supabase.table("seeded_regions")
-            .update(payload)
+            .update(payload, count="exact")
             .eq("bbox_key", bbox_key)
-            .select("bbox_key")
-            .maybe_single()
             .execute()
         )
-        if not result.data:
+        if not result.count:
             payload["triggered_at"] = utc_now()
             supabase.table("seeded_regions").insert(payload).execute()
         return True
