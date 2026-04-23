@@ -673,6 +673,7 @@ export function DiscoveryMap({
   const realUserLocRef = useRef<[number, number] | null>(restoredNearbyOrigin)
   const nearbyOriginRef = useRef<[number, number] | null>(restoredNearbyOrigin)
   const selectedSearchLocationRef = useRef<SearchLocation | null>(urlSearchLocation)
+  const bootSearchLocationRef = useRef(urlSearchLocation)
   const nooksRef = useRef<NookPlace[]>([])
   const pointMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
   const passportMarkersRef = useRef<maplibregl.Marker[]>([])
@@ -1591,8 +1592,12 @@ export function DiscoveryMap({
 
     const cachedCenter = readCachedUserLocation()
     const nearbyBaseCenter = cachedCenter ?? initialCenterRef.current
-    const startCenter = routeBootCenter ?? nearbyBaseCenter
-    const startZoom = routeBootCenter ? 15 : (cachedCenter ? 14 : 10)
+    const bootSearchLocation = bootSearchLocationRef.current
+    const searchBootCenter: [number, number] | null = bootSearchLocation
+      ? [bootSearchLocation.lng, bootSearchLocation.lat]
+      : null
+    const startCenter = routeBootCenter ?? searchBootCenter ?? nearbyBaseCenter
+    const startZoom = routeBootCenter ? 15 : (searchBootCenter || cachedCenter ? 14 : 10)
     initialCenterRef.current = nearbyBaseCenter
 
     const root = document.documentElement
