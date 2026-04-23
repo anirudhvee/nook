@@ -42,6 +42,7 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           BBOX: ${{ inputs.bbox }}
           CITY_NAME: ${{ inputs.city_name }}
+          CLAIM_TRIGGERED_AT: ${{ inputs.claim_triggered_at }}
         run: |
           if [ -n "$CITY_NAME" ]; then
             python scripts/seed-overture.py --bbox "$BBOX" --city-name "$CITY_NAME"

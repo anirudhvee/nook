@@ -624,7 +624,8 @@ def mark_region(
     city_name: str | None,
     venue_count: int = 0,
     refresh_triggered_at: bool = False,
-) -> None:
+    claim_triggered_at: str | None = None,
+) -> bool:
     payload: dict[str, Any] = {
         "bbox_key": bbox_key,
         "city_name": city_name,
@@ -638,6 +639,25 @@ def mark_region(
     if status in {"complete", "failed"}:
         payload["completed_at"] = utc_now()
 
+    if claim_triggered_at:
+        query = (
+            supabase.table("seeded_regions")
+            .update(payload)
+            .eq("bbox_key", bbox_key)
+            .eq("triggered_at", claim_triggered_at)
+            .select("bbox_key")
+            .maybe_single()
+        )
+        result = query.execute()
+        if not result.data:
+            print(
+                "Warning: skipped seeded_regions update for stale claim "
+                f"(bbox_key={bbox_key}, status={status}, triggered_at={claim_triggered_at})",
+                file=sys.stderr,
+            )
+            return False
+        return True
+
     if status == "seeding" and not refresh_triggered_at:
         result = (
             supabase.table("seeded_regions")
@@ -650,8 +670,10 @@ def mark_region(
         if not result.data:
             payload["triggered_at"] = utc_now()
             supabase.table("seeded_regions").insert(payload).execute()
-    else:
-        supabase.table("seeded_regions").upsert(payload, on_conflict="bbox_key").execute()
+        return True
+
+    supabase.table("seeded_regions").upsert(payload, on_conflict="bbox_key").execute()
+    return True
 
 
 def seed_region(
@@ -665,7 +687,18 @@ def seed_region(
     print(f"Seeding {city_name or bbox_key} from Overture {release}")
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     seed_run_id = f"{city_name or bbox_key}-{timestamp}"
-    mark_region(supabase, bbox_key, "seeding", city_name)
+    claim_triggered_at = os.environ.get("CLAIM_TRIGGERED_AT") or None
+    active_claim = mark_region(
+        supabase,
+        bbox_key,
+        "seeding",
+        city_name,
+        claim_triggered_at=claim_triggered_at,
+    )
+    if not active_claim:
+        raise RuntimeError(
+            f"Stale seed claim for {bbox_key}; refusing to overwrite a newer seeded_regions row."
+        )
 
     try:
         rows = query_overture(connection, release, bbox)
@@ -681,11 +714,24 @@ def seed_region(
         upsert_nook_details(supabase, nook_rows, overture_to_nook_id)
 
         venue_count = len(overture_to_nook_id)
-        mark_region(supabase, bbox_key, "complete", city_name, venue_count)
+        mark_region(
+            supabase,
+            bbox_key,
+            "complete",
+            city_name,
+            venue_count,
+            claim_triggered_at=claim_triggered_at,
+        )
         print(f"Completed {city_name or bbox_key}: upserted {venue_count} venues")
         return venue_count
     except Exception:
-        mark_region(supabase, bbox_key, "failed", city_name)
+        mark_region(
+            supabase,
+            bbox_key,
+            "failed",
+            city_name,
+            claim_triggered_at=claim_triggered_at,
+        )
         raise
 
 

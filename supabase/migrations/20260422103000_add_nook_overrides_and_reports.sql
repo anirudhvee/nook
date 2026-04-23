@@ -30,17 +30,7 @@ create policy "nook_overrides_select_public"
   using (true);
 
 drop policy if exists "nook_overrides_insert_authenticated" on public.nook_overrides;
-create policy "nook_overrides_insert_authenticated"
-  on public.nook_overrides for insert
-  to authenticated
-  with check (updated_by = auth.uid());
-
 drop policy if exists "nook_overrides_update_authenticated" on public.nook_overrides;
-create policy "nook_overrides_update_authenticated"
-  on public.nook_overrides for update
-  to authenticated
-  using (updated_by = auth.uid())
-  with check (updated_by = auth.uid());
 
 create table if not exists public.nook_closure_reports (
   id uuid primary key default gen_random_uuid(),
