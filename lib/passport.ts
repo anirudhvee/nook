@@ -1,4 +1,18 @@
-import type { PassportPlacePreview } from '@/lib/google-places'
+import type { NookType } from '@/types/nook'
+
+export interface PassportPlacePreview {
+  id: string
+  slug: string
+  name: string
+  address: string | null
+  city: string | null
+  region: string | null
+  country: string | null
+  locationLine: string
+  type: NookType
+  lat: number | null
+  lng: number | null
+}
 
 export interface PassportVisitRow {
   id: string
@@ -38,6 +52,23 @@ export const EMPTY_PASSPORT_CHECK_IN_SUMMARY: PassportCheckInSummary = {
 }
 
 export const PASSPORT_CHECK_IN_COOLDOWN_MS = 5 * 60 * 1000
+
+export function buildPassportLocationLine({
+  city,
+  region,
+  country,
+}: {
+  city?: string | null
+  region?: string | null
+  country?: string | null
+}): string {
+  if (city && region) return `${city}, ${region}`
+  if (city && country) return `${city}, ${country}`
+  if (city) return city
+  if (region) return region
+  if (country) return country
+  return 'Location unavailable'
+}
 
 export function getPassportCheckInCooldownCutoff(now = Date.now()): string {
   return new Date(now - PASSPORT_CHECK_IN_COOLDOWN_MS).toISOString()

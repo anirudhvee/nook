@@ -1,12 +1,10 @@
 'use client'
 
 import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js'
-import { useEffect, useRef, useState } from 'react'
-import Image from 'next/image'
+import { useEffect, useState } from 'react'
 import {
   ArrowLeft,
   ChevronUp,
-  Star,
   MapPin,
   Clock,
   CirclePlus,
@@ -15,6 +13,8 @@ import {
   Plug,
   Volume2,
   Laptop,
+  Globe,
+  Phone,
 } from 'lucide-react'
 import {
   EMPTY_PASSPORT_CHECK_IN_SUMMARY,
@@ -22,26 +22,37 @@ import {
 } from '@/lib/passport'
 import { dispatchOpenAuthModal } from '@/lib/auth-modal'
 import { createBrowserSupabaseClient } from '@/lib/supabase'
-import { cn } from '@/lib/utils'
-import { buildPlacePhotoUrl } from '@/lib/place-photo'
-import { PlacePhotoAttribution } from '@/components/place/PlacePhotoAttribution'
 import { getPassportUrl } from '@/components/map/passportRoute'
 import { NOOK_TYPE_LABELS } from '@/types/nook'
-import type { NookPlace, NookPhoto } from '@/types/nook'
+import type { NookPlace } from '@/types/nook'
 
-interface PlaceReview {
-  rating?: number
-  text?: {
-    text?: string
-  }
-  originalText?: {
-    text?: string
-  }
+interface WorkSignalSummary {
+  report_count: number
+  wifi_great: number
+  wifi_okay: number
+  wifi_none: number
+  outlets_plenty: number
+  outlets_few: number
+  outlets_none: number
+  noise_silent: number
+  noise_quiet: number
+  noise_moderate: number
+  noise_loud: number
+  laptop_friendly_yes: number
+  laptop_friendly_no: number
+  top_tags: string[] | null
 }
 
-interface PlaceDetail {
-  rating?: number
-  photo?: NookPhoto
+interface NookDetails {
+  google_maps_url?: string | null
+}
+
+interface NookDetail extends NookPlace {
+  googleMapsUrl?: string | null
+  google_maps_url?: string | null
+  nook_details?: NookDetails | null
+  workSignalSummary?: WorkSignalSummary | null
+  work_signal_summary?: WorkSignalSummary | null
   reviewSummary?: {
     text?: {
       text?: string
@@ -49,17 +60,7 @@ interface PlaceDetail {
     disclosureText?: {
       text?: string
     }
-  }
-  generativeSummary?: {
-    overview?: {
-      text?: string
-    }
-  }
-  reviews?: PlaceReview[]
-  regularOpeningHours?: {
-    openNow?: boolean
-    weekdayDescriptions?: string[]
-  }
+  } | null
 }
 
 function signalIcon(signal: string) {
@@ -75,25 +76,47 @@ function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError'
 }
 
-// weekdayDescriptions is Mon=0 .. Sun=6; JS getDay() is 0=Sun..6=Sat
-function todayHours(descriptions: string[]): string {
-  const idx = (new Date().getDay() + 6) % 7
-  const desc = descriptions[idx] ?? ''
-  return desc.replace(/^[^:]+:\s*/, '')
+function winningSignal(
+  entries: Array<{ label: string; count: number }>,
+): string | null {
+  const sorted = entries
+    .filter(entry => entry.count > 0)
+    .sort((a, b) => b.count - a.count)
+
+  return sorted[0]?.label ?? null
 }
 
-function toAiReviews(reviews: PlaceReview[] | undefined): Array<{ text: string; rating: number | null }> {
-  return (reviews ?? []).slice(0, 5).flatMap(review => {
-    const text = review.text?.text?.trim() || review.originalText?.text?.trim() || ''
-    if (!text) return []
+function buildWorkSignals(summary: WorkSignalSummary | null | undefined): string[] {
+  if (!summary || summary.report_count <= 0) return []
 
-    return [
-      {
-        text,
-        rating: review.rating ?? null,
-      },
-    ]
-  })
+  const signals = [
+    winningSignal([
+      { label: 'great wifi', count: summary.wifi_great },
+      { label: 'okay wifi', count: summary.wifi_okay },
+      { label: 'no wifi', count: summary.wifi_none },
+    ]),
+    winningSignal([
+      { label: 'plenty of outlets', count: summary.outlets_plenty },
+      { label: 'some outlets', count: summary.outlets_few },
+      { label: 'no outlets', count: summary.outlets_none },
+    ]),
+    winningSignal([
+      { label: 'silent', count: summary.noise_silent },
+      { label: 'quiet', count: summary.noise_quiet },
+      { label: 'moderate noise', count: summary.noise_moderate },
+      { label: 'loud', count: summary.noise_loud },
+    ]),
+    winningSignal([
+      { label: 'laptop friendly', count: summary.laptop_friendly_yes },
+      { label: 'not laptop friendly', count: summary.laptop_friendly_no },
+    ]),
+  ].filter((signal): signal is string => Boolean(signal))
+
+  for (const tag of summary.top_tags ?? []) {
+    if (tag && !signals.includes(tag)) signals.push(tag)
+  }
+
+  return signals.slice(0, 6)
 }
 
 interface Props {
@@ -113,14 +136,37 @@ function formatCheckInDate(date: string | null): string | null {
   }).format(new Date(date))
 }
 
+function formatLocation(city: string | null, region: string | null, country: string | null): string | null {
+  const parts = [city, region, country].filter(Boolean)
+  return parts.length > 0 ? parts.join(', ') : null
+}
+
+function formatWebsiteLabel(website: string): string {
+  try {
+    return new URL(website).hostname.replace(/^www\./, '')
+  } catch {
+    return 'website'
+  }
+}
+
+function normalizeExternalUrl(value: string | null | undefined): string | null {
+  const trimmed = value?.trim()
+  if (!trimmed) return null
+
+  const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+
+  try {
+    const url = new URL(candidate)
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : null
+  } catch {
+    return null
+  }
+}
+
 export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLift }: Props) {
   const [supabase] = useState(() => createBrowserSupabaseClient())
-  const [detail, setDetail] = useState<PlaceDetail | null>(null)
-  const [photo, setPhoto] = useState<NookPhoto | undefined>(nook.photo)
+  const [detail, setDetail] = useState<NookDetail | null>(null)
   const [fetching, setFetching] = useState(true)
-  const [signals, setSignals] = useState<string[]>([])
-  const [signalsLoading, setSignalsLoading] = useState(true)
-  const [aiSummary, setAiSummary] = useState<string | null>(null)
   const [user, setUser] = useState<User | null>(null)
   const [checkInSummary, setCheckInSummary] = useState<PassportCheckInSummary>(
     EMPTY_PASSPORT_CHECK_IN_SUMMARY,
@@ -128,7 +174,6 @@ export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLif
   const [checkInLoading, setCheckInLoading] = useState(true)
   const [checkInSubmitting, setCheckInSubmitting] = useState(false)
   const [checkInFeedback, setCheckInFeedback] = useState<string | null>(null)
-  const photoPropRef = useRef(nook.photo)
 
   useEffect(() => {
     let isMounted = true
@@ -162,87 +207,29 @@ export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLif
   }, [supabase])
 
   useEffect(() => {
-    photoPropRef.current = nook.photo
-    setPhoto(nook.photo)
-  }, [nook.id, nook.photo])
-
-  useEffect(() => {
     let cancelled = false
     const controller = new AbortController()
+    setDetail(null)
+    setFetching(true)
 
     async function loadPanelData() {
-      const initialPhoto = photoPropRef.current
-
-      if (!cancelled) {
-        setDetail(null)
-        setPhoto(initialPhoto)
-        setSignals([])
-        setAiSummary(null)
-        setFetching(true)
-        setSignalsLoading(true)
-      }
-
       try {
-        const photoPromise = initialPhoto
-          ? Promise.resolve<{ photo?: NookPhoto }>({ photo: initialPhoto })
-          : fetch(`/api/places/${encodeURIComponent(nook.id)}/photo`, {
-              signal: controller.signal,
-            }).then(async response => {
-              if (!response.ok) return { photo: undefined }
-              return await response.json() as { photo?: NookPhoto }
-            }).catch(() => ({ photo: undefined }))
-
-        const detailPromise = fetch(`/api/places/${encodeURIComponent(nook.id)}`, {
+        const response = await fetch(`/api/places/${encodeURIComponent(nook.slug)}`, {
           signal: controller.signal,
         })
 
-        const detailResponse = await detailPromise
-
-        void photoPromise.then(photoData => {
-          if (!cancelled) {
-            setPhoto(photoData.photo)
-          }
-        })
-
-        if (!detailResponse.ok) return
-
-        const detailData = (await detailResponse.json()) as PlaceDetail
-        if (!cancelled) {
-          setDetail(detailData)
-          setFetching(false)
+        if (!response.ok) {
+          return
         }
 
-        const aiReviews = toAiReviews(detailData.reviews)
-        const googleSummary =
-          detailData.reviewSummary?.text?.text ?? detailData.generativeSummary?.overview?.text ?? null
-        const needsAiSummary = !googleSummary && aiReviews.length > 0
-
-        const aiResponse = await fetch('/api/ai', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            place_id: nook.id,
-            generateSummary: needsAiSummary,
-          }),
-          signal: controller.signal,
-        })
-
-        if (!aiResponse.ok) return
-
-        const aiData = (await aiResponse.json()) as { signals?: string[]; summary?: string | null }
+        const data = (await response.json()) as NookDetail
         if (!cancelled) {
-          setSignals(aiData.signals ?? [])
-          setAiSummary(aiData.summary ?? null)
+          setDetail(data)
         }
       } catch (error) {
         if (isAbortError(error)) return
       } finally {
-        if (!cancelled) {
-          setFetching(false)
-          setSignalsLoading(false)
-        }
+        if (!cancelled) setFetching(false)
       }
     }
 
@@ -250,10 +237,9 @@ export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLif
 
     return () => {
       cancelled = true
-      setAiSummary(null)
       controller.abort()
     }
-  }, [nook.id])
+  }, [nook.slug])
 
   useEffect(() => {
     let cancelled = false
@@ -273,7 +259,7 @@ export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLif
 
       try {
         const response = await fetch(
-          `/api/passport/check-ins?placeId=${encodeURIComponent(nook.id)}`,
+          `/api/passport/check-ins?nookId=${encodeURIComponent(nook.id)}`,
           {
             signal: controller.signal,
           },
@@ -310,22 +296,32 @@ export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLif
     }
   }, [nook.id, user])
 
-  const rating = detail?.rating ?? nook.rating
-  const openNow = detail?.regularOpeningHours?.openNow
-  const hours = detail?.regularOpeningHours?.weekdayDescriptions
-    ? todayHours(detail.regularOpeningHours.weekdayDescriptions)
-    : null
-  const reviewSummary =
-    detail?.reviewSummary?.text?.text ??
-    detail?.generativeSummary?.overview?.text ??
-    aiSummary ??
-    null
+  const address = detail?.address ?? nook.address
+  const city = detail?.city ?? nook.city
+  const region = detail?.region ?? nook.region
+  const country = detail?.country ?? nook.country
+  const website = detail?.website ?? nook.website
+  const phone = detail?.phone ?? nook.phone
+  const locationLabel = formatLocation(city, region, country)
+  const websiteUrl = normalizeExternalUrl(website)
+  const googleMapsUrl = normalizeExternalUrl(
+    detail?.nook_details?.google_maps_url ??
+    detail?.google_maps_url ??
+    detail?.googleMapsUrl ??
+    null,
+  )
+  const signalSummary = detail?.workSignalSummary ?? detail?.work_signal_summary ?? null
+  const signals = buildWorkSignals(signalSummary)
+  const workSummary = detail?.reviewSummary?.text?.text ?? null
   const summaryAttribution =
-    reviewSummary === aiSummary && aiSummary != null
-      ? 'Summarized with AI'
-      : detail?.reviewSummary?.disclosureText?.text ?? 'Summarized with Gemini'
+    detail?.reviewSummary?.disclosureText?.text ??
+    (signalSummary && signalSummary.report_count > 0
+      ? `Based on ${signalSummary.report_count} community report${signalSummary.report_count === 1 ? '' : 's'}`
+      : null)
+  const hasDetails = Boolean(address || websiteUrl || phone || googleMapsUrl)
   const hasVisits = checkInSummary.visitsCount > 0
   const firstVisitedLabel = formatCheckInDate(checkInSummary.firstVisitedAt)
+  const showLoadingSkeleton = fetching && !detail
 
   async function handleCheckIn() {
     if (!user) {
@@ -344,7 +340,7 @@ export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLif
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          placeId: nook.id,
+          nookId: nook.id,
         }),
       })
 
@@ -384,10 +380,10 @@ export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLif
             onClick={onPeekLift}
             className="flex w-full items-center justify-between gap-3 text-left transition-colors hover:text-foreground"
           >
-            {fetching ? (
+            {showLoadingSkeleton ? (
               <div className="h-5 w-3/4 animate-pulse rounded bg-muted" />
             ) : (
-              <h2 className="min-w-0 flex-1 truncate text-base font-semibold leading-snug">{nook.name}</h2>
+              <h2 className="min-w-0 flex-1 break-words text-base font-semibold leading-snug">{nook.name}</h2>
             )}
             <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-primary/15 bg-primary/10 text-primary shadow-sm">
               <ChevronUp className="h-4 w-4" strokeWidth={2.25} />
@@ -403,10 +399,10 @@ export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLif
               <ArrowLeft className="h-4 w-4" />
             </button>
 
-            {fetching ? (
+            {showLoadingSkeleton ? (
               <div className="h-5 w-3/4 animate-pulse rounded bg-muted" />
             ) : (
-              <h2 className="min-w-0 flex-1 truncate text-base font-semibold leading-snug">{nook.name}</h2>
+              <h2 className="min-w-0 flex-1 break-words text-base font-semibold leading-snug">{nook.name}</h2>
             )}
           </div>
         )}
@@ -416,86 +412,92 @@ export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLif
             <span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
               {NOOK_TYPE_LABELS[nook.type]}
             </span>
-            {nook.neighborhood && (
-              <span className="text-xs text-muted-foreground">{nook.neighborhood}</span>
-            )}
-            {rating != null && (
-              <span className="flex items-center gap-0.5 text-xs text-muted-foreground">
-                <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
-                {rating.toFixed(1)}
-              </span>
+            {locationLabel && (
+              <span className="text-xs text-muted-foreground">{locationLabel}</span>
             )}
           </div>
         )}
       </div>
 
       <div className="flex-1 space-y-4 overflow-y-auto px-4 pt-3 pb-4">
-        {photo && (
-          <div className="relative h-48 overflow-hidden rounded-2xl border border-border bg-muted">
-            <Image
-              src={buildPlacePhotoUrl(photo.ref, 900)}
-              alt={nook.name}
-              fill
-              sizes="300px"
-              unoptimized
-              loading="eager"
-              fetchPriority="high"
-              className="object-cover"
-            />
-            <PlacePhotoAttribution attributions={photo.authorAttributions} />
-          </div>
-        )}
-
-        <div className="flex items-start gap-2.5">
-          <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-          <span className="text-sm leading-snug">{nook.address}</span>
-        </div>
-
-        {(hours !== null || openNow != null) && (
-          <div className="flex items-center gap-2.5">
-            <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <div className="flex flex-wrap items-center gap-2">
-              {openNow != null && (
-                <span
-                  className={cn(
-                    'rounded px-1.5 py-0.5 text-xs font-semibold',
-                    openNow ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                  )}
-                >
-                  {openNow ? 'open' : 'closed'}
-                </span>
+        {hasDetails && (
+          <div className="rounded-xl border border-border bg-card p-3">
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              details
+            </p>
+            <div className="space-y-2.5">
+              {address && (
+                <div className="flex items-start gap-2.5">
+                  <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  <span className="text-sm leading-snug">{address}</span>
+                </div>
               )}
-              {hours && <span className="text-xs text-muted-foreground">{hours}</span>}
+
+              {websiteUrl && (
+                <a
+                  href={websiteUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="flex items-center gap-2.5 text-sm text-primary transition-colors hover:underline"
+                >
+                  <Globe className="h-4 w-4 shrink-0" />
+                  {formatWebsiteLabel(websiteUrl)}
+                </a>
+              )}
+
+              {phone && (
+                <a
+                  href={`tel:${phone}`}
+                  className="flex items-center gap-2.5 text-sm text-primary transition-colors hover:underline"
+                >
+                  <Phone className="h-4 w-4 shrink-0" />
+                  {phone}
+                </a>
+              )}
+
+              {googleMapsUrl && (
+                <a
+                  href={googleMapsUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="flex items-center gap-2.5 text-sm text-primary transition-colors hover:underline"
+                >
+                  <Clock className="h-4 w-4 shrink-0" />
+                  view hours and directions
+                </a>
+              )}
             </div>
           </div>
         )}
 
-        {(fetching || signalsLoading || reviewSummary) && (
+        {((showLoadingSkeleton && !workSummary) || workSummary) && (
           <div className="rounded-xl border border-border bg-card p-3">
             <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              review summary
+              work summary
             </p>
-            {fetching || signalsLoading ? (
+            {showLoadingSkeleton ? (
               <div className="space-y-2">
                 <div className="h-3 w-full animate-pulse rounded bg-muted" />
                 <div className="h-3 w-5/6 animate-pulse rounded bg-muted" />
                 <div className="h-3 w-24 animate-pulse rounded bg-muted" />
               </div>
-            ) : reviewSummary ? (
+            ) : workSummary ? (
               <>
-                <p className="text-sm leading-6 text-foreground">{reviewSummary}</p>
-                <p className="mt-2 text-[11px] text-muted-foreground">{summaryAttribution}</p>
+                <p className="text-sm leading-6 text-foreground">{workSummary}</p>
+                {summaryAttribution && (
+                  <p className="mt-2 text-[11px] text-muted-foreground">{summaryAttribution}</p>
+                )}
               </>
             ) : null}
           </div>
         )}
 
-        {(signalsLoading || signals.length > 0) && (
+        {((showLoadingSkeleton && signals.length === 0) || signals.length > 0) && (
           <div>
             <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               work signals
             </p>
-            {signalsLoading ? (
+            {showLoadingSkeleton ? (
               <div className="flex flex-wrap gap-2">
                 <div className="h-7 w-24 animate-pulse rounded-full bg-muted" />
                 <div className="h-7 w-28 animate-pulse rounded-full bg-muted" />

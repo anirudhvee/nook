@@ -8,6 +8,8 @@ import { createServerSupabaseClient } from '@/lib/supabase-server'
 
 const RECENT_CHECK_IN_ERROR =
   'You already checked in here recently. Try again later.'
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 async function getAuthenticatedContext() {
   const supabase = await createServerSupabaseClient()
@@ -22,13 +24,13 @@ async function getAuthenticatedContext() {
 async function fetchVisitRows(
   supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
   userId: string,
-  placeId: string,
+  nookId: string,
 ) {
   const { data, error } = await supabase
     .from('stamps')
     .select('id, nook_id, stamped_at')
     .eq('user_id', userId)
-    .eq('nook_id', placeId)
+    .eq('nook_id', nookId)
     .order('stamped_at', { ascending: false })
 
   return {
@@ -38,9 +40,13 @@ async function fetchVisitRows(
 }
 
 export async function GET(request: NextRequest) {
-  const placeId = request.nextUrl.searchParams.get('placeId')?.trim()
-  if (!placeId) {
-    return NextResponse.json({ error: 'Missing placeId' }, { status: 400 })
+  const nookId = request.nextUrl.searchParams.get('nookId')?.trim()
+  if (!nookId) {
+    return NextResponse.json({ error: 'Missing nookId' }, { status: 400 })
+  }
+
+  if (!UUID_PATTERN.test(nookId)) {
+    return NextResponse.json({ error: 'Invalid nookId' }, { status: 400 })
   }
 
   const { supabase, user, error } = await getAuthenticatedContext()
@@ -54,7 +60,7 @@ export async function GET(request: NextRequest) {
   const { data, error: visitError } = await fetchVisitRows(
     supabase,
     user.id,
-    placeId,
+    nookId,
   )
   if (visitError) {
     return NextResponse.json({ error: visitError.message }, { status: 500 })
@@ -69,17 +75,21 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  let body: { placeId?: string } | null = null
+  let body: { nookId?: string } | null = null
 
   try {
-    body = (await request.json()) as { placeId?: string }
+    body = (await request.json()) as { nookId?: string }
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const placeId = body?.placeId?.trim()
-  if (!placeId) {
-    return NextResponse.json({ error: 'Missing placeId' }, { status: 400 })
+  const nookId = body?.nookId?.trim()
+  if (!nookId) {
+    return NextResponse.json({ error: 'Missing nookId' }, { status: 400 })
+  }
+
+  if (!UUID_PATTERN.test(nookId)) {
+    return NextResponse.json({ error: 'Invalid nookId' }, { status: 400 })
   }
 
   const { supabase, user, error } = await getAuthenticatedContext()
@@ -93,7 +103,7 @@ export async function POST(request: NextRequest) {
   const { data: checkInCreated, error: checkInError } = await supabase.rpc(
     'create_passport_check_in',
     {
-      place_id: placeId,
+      nook_id: nookId,
     },
   )
 
@@ -108,7 +118,7 @@ export async function POST(request: NextRequest) {
   const { data, error: visitError } = await fetchVisitRows(
     supabase,
     user.id,
-    placeId,
+    nookId,
   )
   if (visitError) {
     return NextResponse.json({ error: visitError.message }, { status: 500 })

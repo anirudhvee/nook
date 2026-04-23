@@ -1,0 +1,98 @@
+name: Seed Overture Region
+
+on:
+  workflow_dispatch:
+    inputs:
+      bbox:
+        description: "Bounding box as minx,miny,maxx,maxy"
+        required: true
+        type: string
+      bbox_key:
+        description: "Canonical seeded_regions bbox_key"
+        required: false
+        type: string
+      city_name:
+        description: "Optional city or region label"
+        required: false
+        type: string
+      claim_triggered_at:
+        description: "Claim timestamp from seeded_regions"
+        required: false
+        type: string
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade duckdb supabase httpx python-slugify
+
+      - name: Seed region
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          BBOX: ${{ inputs.bbox }}
+          CITY_NAME: ${{ inputs.city_name }}
+          CLAIM_TRIGGERED_AT: ${{ inputs.claim_triggered_at }}
+        run: |
+          if [ -n "$CITY_NAME" ]; then
+            python scripts/seed-overture.py --bbox "$BBOX" --city-name "$CITY_NAME"
+          else
+            python scripts/seed-overture.py --bbox "$BBOX"
+          fi
+
+      - name: Mark region failed on workflow error
+        if: failure()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          BBOX: ${{ inputs.bbox }}
+          BBOX_KEY: ${{ inputs.bbox_key }}
+          CLAIM_TRIGGERED_AT: ${{ inputs.claim_triggered_at }}
+        run: |
+          FALLBACK_BBOX_KEY="$(python - "$BBOX" <<'PY'
+          import sys
+
+          parts = [float(part.strip()) for part in sys.argv[1].split(",")]
+          if len(parts) != 4:
+              raise SystemExit("bbox must have four numeric parts")
+          print(",".join(f"{part:.2f}" for part in parts))
+          PY
+          )"
+          PATCH_BBOX_KEY="${BBOX_KEY:-$FALLBACK_BBOX_KEY}"
+          QUERY="$(python - "$PATCH_BBOX_KEY" "$CLAIM_TRIGGERED_AT" <<'PY'
+          import sys
+          from urllib.parse import quote
+
+          bbox_key = quote(sys.argv[1], safe="")
+          triggered_at = sys.argv[2]
+          query = f"bbox_key=eq.{bbox_key}"
+          if triggered_at:
+              query += f"&triggered_at=eq.{quote(triggered_at, safe='')}"
+          print(query)
+          PY
+          )"
+          COMPLETED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          PAYLOAD="$(python - "$COMPLETED_AT" <<'PY'
+          import json
+          import sys
+
+          print(json.dumps({"status": "failed", "completed_at": sys.argv[1]}))
+          PY
+          )"
+          curl -s --show-error --fail --retry 2 --retry-delay 2 -X PATCH \
+            "${SUPABASE_URL}/rest/v1/seeded_regions?${QUERY}" \
+            -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=minimal" \
+            -d "$PAYLOAD"

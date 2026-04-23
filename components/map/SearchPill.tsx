@@ -141,7 +141,7 @@ export function SearchPill({
       setSuggestions([])
       setSearchUnavailable(true)
     }
-  }, [])
+  }, [invalidateSuggestionRequests])
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
