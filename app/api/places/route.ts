@@ -184,6 +184,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ places })
   }
 
+  if (filter !== 'all') {
+    return NextResponse.json({ places: [] })
+  }
+
   if (!(await canTriggerSeedForRequest())) {
     return NextResponse.json({ places: [] })
   }
