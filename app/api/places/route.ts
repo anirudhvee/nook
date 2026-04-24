@@ -105,12 +105,17 @@ function bboxForRadius(lat: number, lng: number, radiusMeters: number): string {
 }
 
 function getClientIp(request: NextRequest): string | null {
+  const realIp = request.headers.get('x-real-ip')
+  if (realIp && realIp.trim()) {
+    return realIp.trim()
+  }
+
   const forwardedFor = request.headers.get('x-forwarded-for')
   if (forwardedFor) {
     return forwardedFor.split(',')[0]?.trim() || null
   }
 
-  return request.headers.get('x-real-ip')
+  return null
 }
 
 async function triggerSeed(request: NextRequest, bbox: string): Promise<Response> {
