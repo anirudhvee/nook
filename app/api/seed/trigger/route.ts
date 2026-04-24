@@ -59,6 +59,11 @@ function compareSeedSecret(receivedSecret: string | null, configuredSecret: stri
 }
 
 function getClientIp(request: NextRequest): string | null {
+  const forwardedClientIp = request.headers.get('x-nook-client-ip')
+  if (forwardedClientIp && forwardedClientIp.trim()) {
+    return forwardedClientIp.trim()
+  }
+
   const forwardedFor = request.headers.get('x-forwarded-for')
   if (forwardedFor) {
     return forwardedFor.split(',')[0]?.trim() || null
