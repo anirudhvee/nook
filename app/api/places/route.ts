@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient } from '@/lib/supabase-admin'
-import { createServerSupabaseClient } from '@/lib/supabase-server'
 import type { FilterType, NookPlace, NookType } from '@/types/nook'
 
 const DEFAULT_LAT = 37.7749
@@ -105,6 +104,20 @@ function bboxForRadius(lat: number, lng: number, radiusMeters: number): string {
   ].join(',')
 }
 
+function getClientIp(request: NextRequest): string | null {
+  const realIp = request.headers.get('x-real-ip')
+  if (realIp && realIp.trim()) {
+    return realIp.trim()
+  }
+
+  const forwardedFor = request.headers.get('x-forwarded-for')
+  if (forwardedFor) {
+    return forwardedFor.split(',')[0]?.trim() || null
+  }
+
+  return null
+}
+
 async function triggerSeed(request: NextRequest, bbox: string): Promise<Response> {
   const seedSecret = process.env.SEED_TRIGGER_SECRET
   if (!seedSecret) {
@@ -114,29 +127,25 @@ async function triggerSeed(request: NextRequest, bbox: string): Promise<Response
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), SEED_TRIGGER_TIMEOUT_MS)
 
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'x-seed-trigger-secret': seedSecret,
+  }
+  const clientIp = getClientIp(request)
+  if (clientIp) {
+    headers['x-nook-client-ip'] = clientIp
+  }
+
   try {
     return await fetch(new URL('/api/seed/trigger', request.nextUrl.origin), {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-seed-trigger-secret': seedSecret,
-      },
+      headers,
       body: JSON.stringify({ bbox }),
       signal: controller.signal,
     })
   } finally {
     clearTimeout(timeout)
   }
-}
-
-async function canTriggerSeedForRequest(): Promise<boolean> {
-  const supabase = await createServerSupabaseClient()
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser()
-
-  return !error && Boolean(user)
 }
 
 export async function GET(request: NextRequest) {
@@ -185,10 +194,6 @@ export async function GET(request: NextRequest) {
   }
 
   if (filter !== 'all') {
-    return NextResponse.json({ places: [] })
-  }
-
-  if (!(await canTriggerSeedForRequest())) {
     return NextResponse.json({ places: [] })
   }
 
