@@ -6,8 +6,8 @@ import { cn } from '@/lib/utils'
 export type SnapPoint = 'peek' | 'half' | 'full'
 
 export const HEADER_H = 100
-export const HALF_VISIBLE_RATIO = 0.55
-const PEEK_H   = 80
+export const HALF_VISIBLE_RATIO = 0.45
+export const PEEK_H = 104
 
 export function getMobileHalfVisibleHeight(viewportHeight: number): number {
   return viewportHeight * HALF_VISIBLE_RATIO
@@ -195,11 +195,18 @@ export function MobileBottomSheet({ snapPoint, onSnapChange, children }: Props) 
       return el?.scrollTop ?? 0
     }
 
+    function originatesFromNoDragChild(target: EventTarget | null): boolean {
+      const node = target as HTMLElement | null
+      return !!node?.closest?.('[data-no-sheet-drag]')
+    }
+
     function handleTouchStart(e: TouchEvent) {
+      if (originatesFromNoDragChild(e.target)) return
       contentTouchStartY = e.touches[0].clientY
     }
 
     function handleTouchMove(e: TouchEvent) {
+      if (originatesFromNoDragChild(e.target)) return
       const currentY = e.touches[0].clientY
       const deltaY = currentY - contentTouchStartY
       const snap   = snapPointRef.current

@@ -6,11 +6,9 @@ import { usePathname, useSearchParams } from 'next/navigation'
 import maplibregl from 'maplibre-gl'
 import {
   ChevronUp,
-  ScanSearch,
+  Target,
   MapPinOff,
   X,
-  Heart,
-  MapPin,
   Coffee,
   BookOpen,
   Users,
@@ -28,6 +26,7 @@ import {
   MAX_RADIUS_M,
   formatRadius,
   createCirclePolygon,
+  createOutsideMaskPolygon,
   getCircleBounds,
 } from '@/components/map/radiusUtils'
 import {
@@ -41,6 +40,7 @@ import { isPassportPath } from '@/components/map/passportRoute'
 import { PassportOverlay, type PassportPin } from '@/components/passport/PassportOverlay'
 import {
   HEADER_H as MOBILE_SHEET_HEADER_H,
+  PEEK_H as MOBILE_SHEET_PEEK_H,
   MobileBottomSheet,
   getMobileHalfVisibleHeight,
   type SnapPoint,
@@ -53,6 +53,11 @@ const L_CLUSTER_COUNT = 'cluster-count'
 const RADIUS_CIRCLE_SRC = 'radius-circle'
 const RADIUS_CIRCLE_FILL = 'radius-circle-fill'
 const RADIUS_CIRCLE_LINE = 'radius-circle-line'
+const RADIUS_MASK_SRC = 'radius-mask'
+const RADIUS_MASK_FILL = 'radius-mask-fill'
+const RADIUS_RINGS_SRC = 'radius-rings'
+const RADIUS_RINGS_LINE = 'radius-rings-line'
+const RADIUS_MASK_COLOR = '#1f1a14'
 // Moss-green hex matching --primary for map paint properties
 const RADIUS_COLOR = '#4a7c3f'
 
@@ -64,7 +69,8 @@ const SIDEBAR_BOTTOM_PX = 16
 const MAP_ATTRIBUTION_SAFE_AREA_PX = 16
 const PEEK_STRIP_HEIGHT_PX = 72
 const PANEL_STACK_GAP_PX = 8
-const DEFAULT_MAP_MIN_ZOOM = 1.08
+const DEFAULT_MAP_MIN_ZOOM = 0.4
+const MOBILE_PASSPORT_GLOBE_ZOOM = 0.5
 const PASSPORT_PANEL_MARGIN_PX = 16
 const PASSPORT_PANEL_GAP_PX = 16
 const PASSPORT_PANEL_MIN_WIDTH_PX = 320
@@ -486,7 +492,7 @@ function PlacesPanel({
 
   return (
     <>
-      <div className="px-4 pt-2 pb-3 shrink-0">
+      <div className="px-5 pt-2 pb-3 shrink-0 md:pt-4">
         {showPeekLift && onPeekLift ? (
           <button
             type="button"
@@ -494,43 +500,48 @@ function PlacesPanel({
             className="flex w-full items-start justify-between gap-3 text-left transition-colors hover:text-foreground"
           >
             <div className="min-w-0">
-              <p className="font-semibold text-base truncate">{title}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
+              <p className="font-display text-[1.45rem] leading-[1.08] tracking-[-0.015em] text-foreground break-words line-clamp-2">
+                {title}
+              </p>
+              <p className="eyebrow mt-1.5">
                 {getResultsSummary(places.length, loading, seeding, radiusM, useMiles, isRadiusActive)}
               </p>
             </div>
-            <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-primary/15 bg-primary/10 text-primary shadow-sm">
-              <ChevronUp className="h-4 w-4" strokeWidth={2.25} />
+            <span className="mt-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-primary">
+              <ChevronUp className="h-4 w-4" strokeWidth={2} />
             </span>
           </button>
         ) : (
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <p className="font-semibold text-base truncate">{title}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
+          <div className="flex items-start gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="font-display text-[1.45rem] leading-[1.1] tracking-[-0.015em] text-foreground break-words line-clamp-2">
+                {title}
+              </p>
+              <p className="eyebrow mt-1.5">
                 {getResultsSummary(places.length, loading, seeding, radiusM, useMiles, isRadiusActive)}
               </p>
             </div>
             {headerAction ?? (
               showUtilityControls ? (
-                <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+                <div className="mt-0.5 flex shrink-0 items-center gap-1.5">
                   <button
                     onClick={onToggleRadius}
                     title="Set search radius"
                     aria-label="Set search radius"
                     aria-pressed={isRadiusActive}
                     className={cn(
-                      'h-[22px] w-[22px] rounded-full flex items-center justify-center border transition-all duration-150',
+                      'inline-flex h-8 w-8 items-center justify-center rounded-full border transition-all duration-200 ease-out active:scale-95',
                       isRadiusActive
-                        ? 'bg-primary/10 text-primary border-primary/30'
-                        : 'text-muted-foreground border-border/50 hover:border-border hover:text-foreground',
+                        ? 'border-primary/40 bg-primary/10 text-primary shadow-[0_0_0_3px_color-mix(in_oklch,var(--primary)_10%,transparent)]'
+                        : 'border-border/60 text-muted-foreground hover:scale-105 hover:border-border hover:bg-muted/50 hover:text-foreground',
                     )}
                   >
-                    <ScanSearch className="w-3 h-3" />
+                    <Target className="h-4 w-4" />
                   </button>
                   <button
                     onClick={onToggleUnit}
-                    className="text-xs font-medium text-muted-foreground border border-border rounded-full px-2 py-0.5 hover:bg-muted transition-colors"
+                    aria-label={useMiles ? 'Switch to kilometers' : 'Switch to miles'}
+                    className="meta-mono inline-flex h-8 items-center justify-center rounded-full border border-border/60 px-3 text-[10px] uppercase text-muted-foreground transition-all duration-200 ease-out hover:scale-105 hover:border-border hover:bg-muted/50 hover:text-foreground active:scale-95"
                   >
                     {useMiles ? 'mi' : 'km'}
                   </button>
@@ -541,15 +552,8 @@ function PlacesPanel({
         )}
 
         {!showPeekLift && showUtilityControls && isRadiusActive && (
-          <div className="mt-3 pt-3 border-t border-border/40">
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground/70">
-                Search radius
-              </p>
-              <span className="rounded-full border border-primary/15 bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
-                {formatRadius(radiusM, useMiles)}
-              </span>
-            </div>
+          <div className="mt-3.5 flex items-center gap-3">
+            <p className="eyebrow shrink-0">radius</p>
             <input
               type="range"
               min={MIN_RADIUS_M}
@@ -557,65 +561,79 @@ function PlacesPanel({
               step={100}
               value={radiusM}
               onChange={e => onRadiusChange(Number(e.target.value))}
-              className="radius-slider w-full"
+              className="radius-slider min-w-0 flex-1"
               aria-label="Search radius"
               aria-valuetext={formatRadius(radiusM, useMiles)}
-              style={{ '--radius-pct': `${sliderPct}%` } as CSSProperties}
+              data-no-sheet-drag
+              style={{
+                '--radius-pct': `${sliderPct}%`,
+                touchAction: 'pan-x',
+              } as CSSProperties}
             />
-            <div className="flex justify-between mt-1.5">
-              <span className="text-[10px] text-muted-foreground/60">
-                {formatRadius(MIN_RADIUS_M, useMiles)}
-              </span>
-              <span className="text-[10px] text-muted-foreground/60">
-                {formatRadius(MAX_RADIUS_M, useMiles)}
-              </span>
-            </div>
+            <span className="meta-mono shrink-0 rounded-full border border-primary/20 bg-primary/10 px-2.5 py-0.5 text-[10px] uppercase tabular-nums text-primary">
+              {formatRadius(radiusM, useMiles)}
+            </span>
           </div>
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-2.5">
-        {placesWithDist.map(nook => {
+      <div className="flex-1 overflow-y-auto px-3 pt-1 pb-4">
+        {placesWithDist.map((nook, idx) => {
           const isSelected = nook.id === selectedId
           const locationLabel = formatCardLocation(nook)
+          const isLast = idx === placesWithDist.length - 1
 
           return (
             <button
               key={nook.id}
               onClick={() => onSelectNook(nook)}
               className={cn(
-                'w-full text-left rounded-xl border overflow-hidden transition-all',
+                'group relative w-full text-left rounded-xl px-2.5 py-3 transform-gpu will-change-transform transition-all duration-200',
+                'border border-transparent',
                 isSelected
-                  ? 'ring-2 ring-primary/30 border-primary/25'
-                  : 'bg-card border-border hover:shadow-md',
+                  ? 'bg-primary/[0.06] border-primary/20'
+                  : 'hover:-translate-y-0.5 hover:shadow-md hover:bg-muted/40 hover:border-primary/10 hover:z-10 hover:rounded-xl',
+                !isLast && !isSelected && 'border-b-border/30 rounded-none border-b [&:has(+button:hover)]:border-b-transparent',
               )}
             >
-              <div className="relative w-full h-[160px] bg-muted">
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <NookTypeIcon type={nook.type} className="w-8 h-8 text-muted-foreground/25" />
+              {isSelected && (
+                <span
+                  aria-hidden
+                  className="absolute left-0 top-3 bottom-3 w-[2px] rounded-full bg-primary/60"
+                />
+              )}
+              <div className="flex items-start gap-3">
+                <div
+                  className="category-swatch shrink-0 h-14 w-14"
+                  data-type={nook.type}
+                  aria-hidden
+                >
+                  <NookTypeIcon type={nook.type} className="h-5 w-5" />
                 </div>
-                <span className="absolute top-2 right-2 p-1.5 rounded-full bg-white/80 backdrop-blur-sm text-muted-foreground">
-                  <Heart className="w-3.5 h-3.5" />
-                </span>
-              </div>
 
-              <div className="p-3">
-                <p className="break-words text-sm font-semibold leading-snug">{nook.name}</p>
-                {locationLabel && (
-                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{locationLabel}</p>
-                )}
-
-                <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
-                  {nook.dist != null && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-muted text-muted-foreground">
-                      <MapPin className="w-3 h-3" />
-                      {formatDist(nook.dist, useMiles)}
-                    </span>
+                <div className="min-w-0 flex-1">
+                  <p className="font-display text-[1.2rem] leading-[1.15] tracking-[-0.01em] text-foreground break-words">
+                    {nook.name}
+                  </p>
+                  {locationLabel && (
+                    <p className="mt-1 text-[12.5px] text-muted-foreground leading-snug line-clamp-2">
+                      {locationLabel}
+                    </p>
                   )}
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-muted text-muted-foreground">
-                    <NookTypeIcon type={nook.type} className="w-3 h-3" />
-                    {NOOK_TYPE_LABELS[nook.type]}
-                  </span>
+
+                  <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                    <span className="meta-mono text-[10px] uppercase text-muted-foreground/85">
+                      {NOOK_TYPE_LABELS[nook.type]}
+                    </span>
+                    {nook.dist != null && (
+                      <>
+                        <span aria-hidden className="h-0.5 w-0.5 rounded-full bg-muted-foreground/40" />
+                        <span className="meta-mono text-[10px] uppercase text-muted-foreground/85">
+                          {formatDist(nook.dist, useMiles)}
+                        </span>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             </button>
@@ -623,13 +641,13 @@ function PlacesPanel({
         })}
 
         {!loading && seeding && places.length === 0 && (
-          <p className="text-xs text-muted-foreground px-1 pt-2">
-            Finding nooks in this area...
+          <p className="px-4 pt-4 text-sm text-muted-foreground font-display italic">
+            Finding nooks in this area…
           </p>
         )}
 
         {!loading && !seeding && places.length === 0 && (
-          <p className="text-xs text-muted-foreground px-1 pt-2">
+          <p className="px-4 pt-4 text-sm text-muted-foreground font-display italic">
             No spots found. Try a different filter.
           </p>
         )}
@@ -736,6 +754,9 @@ export function DiscoveryMap({
   const [viewportHeight, setViewportHeight] = useState(0)
   const [mobileSheetSnap, setMobileSheetSnap] = useState<SnapPoint>('half')
   const prevIsMobileRef = useRef(false)
+  const mobileTopBarRef = useRef<HTMLDivElement>(null)
+  const [mobileTopBarHeight, setMobileTopBarHeight] = useState<number>(MOBILE_SHEET_HEADER_H)
+  const mobileTopBarHeightRef = useRef<number>(MOBILE_SHEET_HEADER_H)
 
   useEffect(() => { showLocDeniedBannerRef.current = showLocDeniedBanner }, [showLocDeniedBanner])
 
@@ -814,7 +835,7 @@ export function DiscoveryMap({
     const currentViewportHeight = getCurrentViewportHeight()
     const nextPad = isMobile
       ? {
-          top: MOBILE_SHEET_HEADER_H,
+          top: mobileTopBarHeightRef.current,
           bottom: Math.round(getMobileHalfVisibleHeight(currentViewportHeight)),
           left: 0,
           right: 0,
@@ -877,6 +898,18 @@ export function DiscoveryMap({
     if (isPassportOpen) setMobileSheetSnap('half')
   }, [isPassportOpen, isMobile])
 
+  // Whenever the user opens or switches to a nook detail on mobile, force the
+  // sheet down to half so the map (and the just-selected pin) stays visible.
+  const prevDetailNookIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    const prevId = prevDetailNookIdRef.current
+    const currentId = detailNook?.id ?? null
+    prevDetailNookIdRef.current = currentId
+    if (!isMobile) return
+    if (!currentId || currentId === prevId) return
+    setMobileSheetSnap('half')
+  }, [detailNook, isMobile])
+
   useEffect(() => {
     if (!isMobile) {
       document.documentElement.style.removeProperty('--mobile-geolocate-bottom')
@@ -890,7 +923,7 @@ export function DiscoveryMap({
       mobileSheetSnap === 'half'
         ? halfVisibleHeight + 8
         : mobileSheetSnap === 'peek'
-          ? 88
+          ? MOBILE_SHEET_PEEK_H + 8
           : -48
 
     document.documentElement.style.setProperty('--mobile-geolocate-bottom', `${bottom}px`)
@@ -903,6 +936,59 @@ export function DiscoveryMap({
       document.documentElement.style.removeProperty('--mobile-geolocate-pointer-events')
     }
   }, [getCurrentViewportHeight, isMobile, mobileSheetSnap])
+
+  // Measure the actual rendered height of the mobile top overlay (search pill +
+  // filter chips). This is the true unobstructed top of the map, used as the
+  // map's top padding so the camera centers in the visible slice.
+  useEffect(() => {
+    if (!isMobile) {
+      mobileTopBarHeightRef.current = MOBILE_SHEET_HEADER_H
+      setMobileTopBarHeight(MOBILE_SHEET_HEADER_H)
+      return
+    }
+    const el = mobileTopBarRef.current
+    if (!el) return
+    const update = () => {
+      const next = Math.round(el.getBoundingClientRect().height)
+      if (next <= 0) return
+      mobileTopBarHeightRef.current = next
+      setMobileTopBarHeight(prev => (prev === next ? prev : next))
+    }
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [isMobile])
+
+  // Re-pad the map so its visible center tracks the slice not covered by the
+  // bottom sheet — keeps the user-location pin (and current target) centered
+  // in whatever portion of the map is actually visible at the current snap.
+  const sheetPaddingInitializedRef = useRef(false)
+  useEffect(() => {
+    if (!isMobile) {
+      sheetPaddingInitializedRef.current = false
+      return
+    }
+    const map = mapRef.current
+    if (!map) return
+
+    const vh = getCurrentViewportHeight()
+    const halfVisibleHeight = Math.round(getMobileHalfVisibleHeight(vh))
+    const bottom =
+      mobileSheetSnap === 'peek'
+        ? MOBILE_SHEET_PEEK_H
+        : mobileSheetSnap === 'half'
+          ? halfVisibleHeight
+          : Math.max(vh - mobileTopBarHeight, 0)
+
+    const padding = { top: mobileTopBarHeight, bottom, left: 0, right: 0 }
+    if (sheetPaddingInitializedRef.current) {
+      map.easeTo({ padding, duration: 300 })
+    } else {
+      map.setPadding(padding)
+      sheetPaddingInitializedRef.current = true
+    }
+  }, [getCurrentViewportHeight, isMobile, mobileSheetSnap, mobileTopBarHeight])
 
   useEffect(() => {
     if (!isMobile) return
@@ -1286,6 +1372,8 @@ export function DiscoveryMap({
     if (map?.getLayer(L_CLUSTER_COUNT)) map.setLayoutProperty(L_CLUSTER_COUNT, 'visibility', 'none')
     if (map?.getLayer(RADIUS_CIRCLE_FILL)) map.setLayoutProperty(RADIUS_CIRCLE_FILL, 'visibility', 'none')
     if (map?.getLayer(RADIUS_CIRCLE_LINE)) map.setLayoutProperty(RADIUS_CIRCLE_LINE, 'visibility', 'none')
+    if (map?.getLayer(RADIUS_MASK_FILL)) map.setLayoutProperty(RADIUS_MASK_FILL, 'visibility', 'none')
+    if (map?.getLayer(RADIUS_RINGS_LINE)) map.setLayoutProperty(RADIUS_RINGS_LINE, 'visibility', 'none')
   }, [])
 
   const showNearbyMarkers = useCallback(() => {
@@ -1297,6 +1385,8 @@ export function DiscoveryMap({
     if (map?.getLayer(L_CLUSTER_COUNT)) map.setLayoutProperty(L_CLUSTER_COUNT, 'visibility', 'visible')
     if (map?.getLayer(RADIUS_CIRCLE_FILL)) map.setLayoutProperty(RADIUS_CIRCLE_FILL, 'visibility', 'visible')
     if (map?.getLayer(RADIUS_CIRCLE_LINE)) map.setLayoutProperty(RADIUS_CIRCLE_LINE, 'visibility', 'visible')
+    if (map?.getLayer(RADIUS_MASK_FILL)) map.setLayoutProperty(RADIUS_MASK_FILL, 'visibility', 'visible')
+    if (map?.getLayer(RADIUS_RINGS_LINE)) map.setLayoutProperty(RADIUS_RINGS_LINE, 'visibility', 'visible')
   }, [])
 
   const clearPassportMarkers = useCallback(() => {
@@ -1330,9 +1420,9 @@ export function DiscoveryMap({
       passportMarkersRef.current.push(marker)
     }
 
-    const MOBILE_HEADER_H = MOBILE_SHEET_HEADER_H
+    const MOBILE_HEADER_H = mobileTopBarHeightRef.current
     const avgLat = pins.reduce((s, p) => s + p.lat, 0) / pins.length
-    const GLOBE_ZOOM = isMobileRef.current ? DEFAULT_MAP_MIN_ZOOM : 1.8
+    const GLOBE_ZOOM = isMobileRef.current ? MOBILE_PASSPORT_GLOBE_ZOOM : 1.8
     const DEG_PER_SEC = 18
 
     const getPassportGlobePadding = () => {
@@ -1442,7 +1532,7 @@ export function DiscoveryMap({
 
     const zeroPad = { top: 0, bottom: 0, left: 0, right: 0 }
     const resetPad = isMobileRef.current
-      ? { top: MOBILE_SHEET_HEADER_H, bottom: Math.round(getMobileHalfVisibleHeight(getCurrentViewportHeight())), left: 0, right: 0 }
+      ? { top: mobileTopBarHeightRef.current, bottom: Math.round(getMobileHalfVisibleHeight(getCurrentViewportHeight())), left: 0, right: 0 }
       : zeroPad
     if (isRadiusActive) {
       if (wasPassport) mapRef.current?.setPadding(resetPad)
@@ -1553,7 +1643,7 @@ export function DiscoveryMap({
       clearPassportMarkers()
       showNearbyMarkers()
 
-      const MOBILE_H = MOBILE_SHEET_HEADER_H
+      const MOBILE_H = mobileTopBarHeightRef.current
       const zeroPad = { top: 0, bottom: 0, left: 0, right: 0 }
       const resetPad = isMobileRef.current
         ? { top: MOBILE_H, bottom: Math.round(getMobileHalfVisibleHeight(getCurrentViewportHeight())), left: 0, right: 0 }
@@ -1705,7 +1795,7 @@ export function DiscoveryMap({
     })
 
     if (isMobileRef.current) {
-      const MOBILE_H = MOBILE_SHEET_HEADER_H
+      const MOBILE_H = mobileTopBarHeightRef.current
       map.setPadding({
         top: MOBILE_H,
         bottom: Math.round(getMobileHalfVisibleHeight(initialViewportHeight)),
@@ -1760,6 +1850,20 @@ export function DiscoveryMap({
         paint: { 'text-color': '#fff' },
       })
 
+      map.addSource(RADIUS_MASK_SRC, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      })
+      map.addLayer({
+        id: RADIUS_MASK_FILL,
+        type: 'fill',
+        source: RADIUS_MASK_SRC,
+        paint: {
+          'fill-color': RADIUS_MASK_COLOR,
+          'fill-opacity': 0.18,
+        },
+      }, L_CLUSTERS)
+
       map.addSource(RADIUS_CIRCLE_SRC, {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },
@@ -1770,7 +1874,22 @@ export function DiscoveryMap({
         source: RADIUS_CIRCLE_SRC,
         paint: {
           'fill-color': RADIUS_COLOR,
-          'fill-opacity': 0.07,
+          'fill-opacity': 0,
+        },
+      }, L_CLUSTERS)
+
+      map.addSource(RADIUS_RINGS_SRC, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      })
+      map.addLayer({
+        id: RADIUS_RINGS_LINE,
+        type: 'line',
+        source: RADIUS_RINGS_SRC,
+        paint: {
+          'line-color': RADIUS_COLOR,
+          'line-width': 1.5,
+          'line-opacity': ['coalesce', ['get', 'opacity'], 0],
         },
       }, L_CLUSTERS)
 
@@ -1780,9 +1899,8 @@ export function DiscoveryMap({
         source: RADIUS_CIRCLE_SRC,
         paint: {
           'line-color': RADIUS_COLOR,
-          'line-width': 1.5,
-          'line-dasharray': [3, 2],
-          'line-opacity': 0.55,
+          'line-width': 2,
+          'line-opacity': 0.65,
         },
       }, L_CLUSTERS)
 
@@ -1947,10 +2065,16 @@ export function DiscoveryMap({
     if (!map || !mapLoadedRef.current) return
 
     const src = map.getSource(RADIUS_CIRCLE_SRC) as maplibregl.GeoJSONSource | undefined
+    const maskSrc = map.getSource(RADIUS_MASK_SRC) as maplibregl.GeoJSONSource | undefined
+    const ringsSrc = map.getSource(RADIUS_RINGS_SRC) as maplibregl.GeoJSONSource | undefined
     if (!src) return
 
+    const empty = { type: 'FeatureCollection' as const, features: [] }
+
     if (!isRadiusActive) {
-      src.setData({ type: 'FeatureCollection', features: [] })
+      src.setData(empty)
+      maskSrc?.setData(empty)
+      ringsSrc?.setData(empty)
       return
     }
 
@@ -1959,7 +2083,31 @@ export function DiscoveryMap({
       : (nearbyOrigin ?? initialCenterRef.current)
 
     src.setData({ type: 'FeatureCollection', features: [createCirclePolygon(center, radiusM)] })
+    maskSrc?.setData({
+      type: 'FeatureCollection',
+      features: [createOutsideMaskPolygon(center, radiusM)],
+    })
     fitToCircle(center, radiusM)
+
+    if (!ringsSrc) return
+    const period = 4600
+    const startTime = performance.now()
+    let raf = 0
+    const tick = () => {
+      const elapsed = performance.now() - startTime
+      const phase = (elapsed % period) / period
+      const waveRadius = Math.max(phase * radiusM, 5)
+      const opacity = Math.sin(phase * Math.PI) * 0.28
+      const feature = createCirclePolygon(center, waveRadius)
+      feature.properties = { opacity }
+      ringsSrc.setData({ type: 'FeatureCollection', features: [feature] })
+      raf = requestAnimationFrame(tick)
+    }
+    tick()
+
+    return () => {
+      cancelAnimationFrame(raf)
+    }
   }, [isRadiusActive, radiusM, selectedSearchLocation, nearbyOrigin, fitToCircle])
 
   useEffect(() => {
@@ -2034,7 +2182,7 @@ export function DiscoveryMap({
 
       {isMobile && (
         <>
-          <div className="absolute top-0 left-0 right-0 z-30">
+          <div ref={mobileTopBarRef} className="absolute top-0 left-0 right-0 z-30">
             <div className="bg-gradient-to-b from-background/90 via-background/50 to-transparent">
               <div className="flex items-center gap-2 px-3 pt-3 pb-0">
                 <div className="flex-1 min-w-0">
@@ -2055,26 +2203,28 @@ export function DiscoveryMap({
                 <AuthControls variant="map" passportIcon />
               </div>
 
-              <div className="flex items-center gap-1.5 px-3 pt-2 pb-2 overflow-x-auto no-scrollbar">
-                {FILTERS.map(({ id, label }) => (
-                  <button
-                    key={id}
-                    onClick={() => {
-                      if (selectedSearchLocation === null && mapSyncModeRef.current === 'frozen') {
-                        mapSyncModeRef.current = 'nearby'
-                      }
-                      setFilter(id)
-                    }}
-                    className={cn(
-                      'px-3 py-1 rounded-full text-sm font-medium border transition-colors whitespace-nowrap shrink-0',
-                      filter === id
-                        ? 'bg-primary text-primary-foreground border-primary shadow-sm'
-                        : 'bg-white/90 backdrop-blur-sm text-foreground border-white/50',
-                    )}
-                  >
-                    {label}
-                  </button>
-                ))}
+              <div className="flex px-3 pt-2 pb-2 overflow-x-auto no-scrollbar">
+                <div className="mx-auto flex items-center gap-0.5 rounded-full bg-popover border border-border/60 shadow-md p-1">
+                  {FILTERS.map(({ id, label }) => (
+                    <button
+                      key={id}
+                      onClick={() => {
+                        if (selectedSearchLocation === null && mapSyncModeRef.current === 'frozen') {
+                          mapSyncModeRef.current = 'nearby'
+                        }
+                        setFilter(id)
+                      }}
+                      className={cn(
+                        'inline-flex items-center justify-center rounded-full px-3.5 py-1.5 text-sm whitespace-nowrap shrink-0 transition-all duration-200 ease-out',
+                        filter === id
+                          ? 'bg-primary text-primary-foreground shadow-sm'
+                          : 'text-foreground/70 hover:bg-secondary/70 hover:text-foreground hover:scale-105 active:scale-95',
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -2160,28 +2310,30 @@ export function DiscoveryMap({
           </div>
 
           <div
-            className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex flex-nowrap gap-1.5 overflow-x-auto"
+            className="absolute top-4 left-1/2 -translate-x-1/2 z-30"
             style={{ maxWidth: 'calc(100vw - 360px)' }}
           >
-            {FILTERS.map(({ id, label }) => (
-              <button
-                key={id}
-                onClick={() => {
-                  if (selectedSearchLocation === null && mapSyncModeRef.current === 'frozen') {
-                    mapSyncModeRef.current = 'nearby'
-                  }
-                  setFilter(id)
-                }}
-                className={cn(
-                  'px-3 py-1.5 rounded-full text-sm font-medium shadow border transition-colors whitespace-nowrap shrink-0',
-                  filter === id
-                    ? 'bg-primary text-primary-foreground border-primary'
-                    : 'bg-white/90 backdrop-blur-sm text-foreground border-white/50 hover:bg-white'
-                )}
-              >
-                {label}
-              </button>
-            ))}
+            <div className="inline-flex items-center gap-0.5 rounded-full bg-popover border border-border/60 shadow-md p-1 overflow-x-auto no-scrollbar">
+              {FILTERS.map(({ id, label }) => (
+                <button
+                  key={id}
+                  onClick={() => {
+                    if (selectedSearchLocation === null && mapSyncModeRef.current === 'frozen') {
+                      mapSyncModeRef.current = 'nearby'
+                    }
+                    setFilter(id)
+                  }}
+                  className={cn(
+                    'inline-flex items-center justify-center rounded-full px-4 py-1.5 text-sm whitespace-nowrap shrink-0 transition-all duration-200 ease-out',
+                    filter === id
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'text-foreground/70 hover:bg-secondary/70 hover:text-foreground hover:scale-105 active:scale-95'
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="absolute top-4 right-4 z-30">
@@ -2199,16 +2351,16 @@ export function DiscoveryMap({
             {(isSearchOpen || isPassportOpen) ? (
               <button
                 onClick={isPassportOpen ? handlePassportClose : restoreNearbyView}
-                className="w-full h-[72px] px-4 py-3 text-left shrink-0 hover:bg-muted/40 transition-colors flex items-center justify-between gap-3"
+                className="w-full min-h-[72px] px-5 py-3 text-left shrink-0 hover:bg-muted/40 transition-colors flex items-center justify-between gap-3"
               >
                 <div className="min-w-0 space-y-1">
-                  <p className="font-semibold text-base leading-none">nooks near you</p>
-                  <p className="text-xs leading-none text-muted-foreground">
+                  <p className="font-display text-[1.35rem] leading-[1.08] tracking-[-0.015em] break-words line-clamp-2">nooks near you</p>
+                  <p className="eyebrow">
                     {getResultsSummary(nearbyNooks.length, nearbyLoading, nearbySeeding, radiusM, useMiles, isRadiusActive)}
                   </p>
                 </div>
-                <span className="shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-full border border-primary/15 bg-primary/10 text-primary shadow-sm">
-                  <ChevronUp className="h-4 w-4" strokeWidth={2.25} />
+                <span className="shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-primary">
+                  <ChevronUp className="h-4 w-4" strokeWidth={2} />
                 </span>
               </button>
             ) : (
@@ -2297,10 +2449,10 @@ export function DiscoveryMap({
               <MapPinOff className="h-4 w-4 text-muted-foreground" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground leading-snug">
+              <p className="font-display text-[1.05rem] leading-[1.15] tracking-[-0.01em] text-foreground">
                 Location access is blocked
               </p>
-              <p className="text-sm text-muted-foreground mt-0.5 leading-snug">
+              <p className="text-[13px] text-muted-foreground mt-1 leading-snug">
                 Enable it in your browser settings to find nooks near you. You can still search any location.
               </p>
             </div>
