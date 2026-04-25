@@ -462,6 +462,35 @@ body.mercator-mode #nook-globe-rim {
   display: none;
 }
 
+/* ── Map controls (zoom, geolocate, attribution) ──────────────────────────── */
+.nook-map-container .maplibregl-ctrl-group {
+  background: color-mix(in oklch, var(--popover) 95%, transparent);
+  border: 1px solid color-mix(in oklch, var(--border) 50%, transparent);
+  border-radius: 14px;
+  box-shadow: 0 2px 10px oklch(0.18 0.03 60 / 0.12);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  overflow: hidden;
+}
+
+.nook-map-container .maplibregl-ctrl-group button {
+  background-color: transparent;
+}
+
+.nook-map-container .maplibregl-ctrl-group button:hover {
+  background-color: color-mix(in oklch, var(--muted) 60%, transparent);
+}
+
+.nook-map-container .maplibregl-ctrl-group button + button {
+  border-top: 1px solid color-mix(in oklch, var(--border) 30%, transparent);
+}
+
+.nook-map-container .maplibregl-ctrl-attrib {
+  background: color-mix(in oklch, var(--popover) 75%, transparent) !important;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
 @media (max-width: 767px) {
   .maplibregl-ctrl-bottom-right {
     bottom: var(--mobile-geolocate-bottom, 12px) !important;

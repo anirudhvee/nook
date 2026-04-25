@@ -242,9 +242,9 @@ export function SearchPill({
   return (
     <div className={cn('relative', fullWidth && 'w-full')}>
       <div className={cn(
-        'flex items-center bg-white/92 backdrop-blur-md shadow-sm border border-foreground/8 h-11 overflow-hidden transition-shadow duration-200 ease-out',
+        'flex items-center bg-popover/95 backdrop-blur-md shadow-sm border border-border/50 h-11 overflow-hidden transition-shadow duration-200 ease-out',
         fullWidth ? 'w-full rounded-full' : 'rounded-full',
-        !isOpen && 'hover:shadow-md hover:bg-white',
+        !isOpen && 'hover:shadow-md hover:bg-popover',
       )}>
         <div className="flex items-center pl-4 pr-3 shrink-0">
           <LogoWordmark className="text-[1.55rem]" />
@@ -323,7 +323,7 @@ export function SearchPill({
         <div
           id={listboxId}
           role={visibleSuggestions.length > 0 ? 'listbox' : undefined}
-          className="absolute top-[calc(100%+8px)] left-0 right-0 bg-background/97 backdrop-blur-md rounded-2xl shadow-xl border border-foreground/8 overflow-hidden z-50"
+          className="absolute top-[calc(100%+8px)] left-0 right-0 bg-popover/97 backdrop-blur-md rounded-2xl shadow-xl border border-border/50 overflow-hidden z-50"
         >
           {visibleSuggestions.length > 0 ? (
             visibleSuggestions.map((s, i) => {

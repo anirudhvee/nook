@@ -307,7 +307,7 @@ export function AuthControls({ variant, showPassport = true, passportIcon = fals
 
   const passportClasses =
     variant === "map"
-      ? "inline-flex items-center justify-center px-4 py-2 rounded-full text-sm font-medium bg-white/90 backdrop-blur-sm border border-white/50 shadow transition-all duration-200 ease-out hover:bg-white hover:scale-105 active:scale-95 whitespace-nowrap"
+      ? "inline-flex items-center justify-center px-4 py-2 rounded-full text-sm font-medium bg-popover/95 backdrop-blur-sm border border-border/50 shadow transition-all duration-200 ease-out hover:bg-popover hover:scale-105 active:scale-95 whitespace-nowrap"
       : buttonVariants({ variant: "ghost", size: "sm" });
 
   const signInClasses =
@@ -317,7 +317,7 @@ export function AuthControls({ variant, showPassport = true, passportIcon = fals
 
   const avatarButtonClasses =
     variant === "map"
-      ? "flex size-10 items-center justify-center overflow-hidden rounded-full border border-white/60 bg-white/90 text-sm font-semibold text-foreground shadow backdrop-blur-sm transition-all duration-200 ease-out hover:bg-white hover:scale-105 active:scale-95"
+      ? "flex size-10 items-center justify-center overflow-hidden rounded-full border border-border/50 bg-popover/95 text-sm font-semibold text-foreground shadow backdrop-blur-sm transition-all duration-200 ease-out hover:bg-popover hover:scale-105 active:scale-95"
       : "flex size-9 items-center justify-center overflow-hidden rounded-full border border-border bg-background text-sm font-semibold text-foreground transition-all duration-200 ease-out hover:bg-muted hover:scale-105 active:scale-95";
   const avatarImageSize = variant === "map" ? 40 : 36;
 
@@ -333,7 +333,7 @@ export function AuthControls({ variant, showPassport = true, passportIcon = fals
           <button
             type="button"
             onClick={handlePassportClick}
-            className="flex size-10 items-center justify-center rounded-full border border-white/60 bg-white/90 shadow backdrop-blur-sm transition-all duration-200 ease-out hover:bg-white hover:scale-105 active:scale-95"
+            className="flex size-10 items-center justify-center rounded-full border border-border/50 bg-popover/95 shadow backdrop-blur-sm transition-all duration-200 ease-out hover:bg-popover hover:scale-105 active:scale-95"
             aria-label="My passport"
           >
             <Image
