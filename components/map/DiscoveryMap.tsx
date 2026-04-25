@@ -2090,14 +2090,14 @@ export function DiscoveryMap({
     fitToCircle(center, radiusM)
 
     if (!ringsSrc) return
-    const period = 4600
+    const period = 5500
     const startTime = performance.now()
     let raf = 0
     const tick = () => {
       const elapsed = performance.now() - startTime
       const phase = (elapsed % period) / period
       const waveRadius = Math.max(phase * radiusM, 5)
-      const opacity = Math.sin(phase * Math.PI) * 0.28
+      const opacity = Math.sin(phase * Math.PI) * 0.22
       const feature = createCirclePolygon(center, waveRadius)
       feature.properties = { opacity }
       ringsSrc.setData({ type: 'FeatureCollection', features: [feature] })
