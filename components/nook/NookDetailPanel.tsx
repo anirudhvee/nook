@@ -15,6 +15,10 @@ import {
   Laptop,
   Globe,
   Phone,
+  Coffee,
+  BookOpen,
+  Users,
+  Building2,
 } from 'lucide-react'
 import {
   EMPTY_PASSPORT_CHECK_IN_SUMMARY,
@@ -24,7 +28,16 @@ import { dispatchOpenAuthModal } from '@/lib/auth-modal'
 import { createBrowserSupabaseClient } from '@/lib/supabase'
 import { getPassportUrl } from '@/components/map/passportRoute'
 import { NOOK_TYPE_LABELS } from '@/types/nook'
-import type { NookPlace } from '@/types/nook'
+import type { NookPlace, NookType } from '@/types/nook'
+
+function NookTypeIcon({ type, className }: { type: NookType; className?: string }) {
+  switch (type) {
+    case 'cafe': return <Coffee className={className} />
+    case 'library': return <BookOpen className={className} />
+    case 'coworking': return <Users className={className} />
+    default: return <Building2 className={className} />
+  }
+}
 
 interface WorkSignalSummary {
   report_count: number
@@ -373,7 +386,7 @@ export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLif
 
   return (
     <div className="flex h-full flex-col animate-in slide-in-from-left-4 duration-200">
-      <div className="shrink-0 border-b border-border px-4 pt-2 pb-3 md:pt-1">
+      <div className="shrink-0 px-5 pt-2 pb-4 md:pt-4">
         {showPeekLift && onPeekLift ? (
           <button
             type="button"
@@ -381,55 +394,72 @@ export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLif
             className="flex w-full items-center justify-between gap-3 text-left transition-colors hover:text-foreground"
           >
             {showLoadingSkeleton ? (
-              <div className="h-5 w-3/4 animate-pulse rounded bg-muted" />
+              <div className="h-6 w-3/4 animate-pulse rounded bg-muted" />
             ) : (
-              <h2 className="min-w-0 flex-1 break-words text-base font-semibold leading-snug">{nook.name}</h2>
+              <h2 className="font-display min-w-0 flex-1 break-words text-[1.4rem] leading-[1.05] tracking-[-0.015em]">
+                {nook.name}
+              </h2>
             )}
-            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-primary/15 bg-primary/10 text-primary shadow-sm">
-              <ChevronUp className="h-4 w-4" strokeWidth={2.25} />
+            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-primary">
+              <ChevronUp className="h-4 w-4" strokeWidth={2} />
             </span>
           </button>
         ) : (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onClose}
-              className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
-              aria-label="Back to list"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </button>
+          <>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={onClose}
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border/60 text-muted-foreground transition-colors hover:border-border hover:text-foreground"
+                aria-label="Back to list"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </button>
+              <span className="eyebrow">{NOOK_TYPE_LABELS[nook.type]}</span>
+            </div>
 
-            {showLoadingSkeleton ? (
-              <div className="h-5 w-3/4 animate-pulse rounded bg-muted" />
-            ) : (
-              <h2 className="min-w-0 flex-1 break-words text-base font-semibold leading-snug">{nook.name}</h2>
-            )}
-          </div>
-        )}
-
-        {!fetching && !showPeekLift && (
-          <div className="mt-1.5 ml-6 flex flex-wrap items-center gap-2">
-            <span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-              {NOOK_TYPE_LABELS[nook.type]}
-            </span>
-            {locationLabel && (
-              <span className="text-xs text-muted-foreground">{locationLabel}</span>
-            )}
-          </div>
+            <div className="mt-2 flex items-start gap-3">
+              <div
+                className="category-swatch h-11 w-11 shrink-0"
+                data-type={nook.type}
+                aria-hidden
+              >
+                <NookTypeIcon type={nook.type} className="h-4 w-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                {showLoadingSkeleton ? (
+                  <div className="space-y-2 pt-1">
+                    <div className="h-6 w-3/4 animate-pulse rounded bg-muted" />
+                    <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
+                  </div>
+                ) : (
+                  <>
+                    <h2 className="font-display break-words text-[1.8rem] leading-[1.02] tracking-[-0.02em]">
+                      {nook.name}
+                    </h2>
+                    {locationLabel && (
+                      <p className="mt-1.5 text-[13px] text-muted-foreground leading-snug">
+                        {locationLabel}
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </>
         )}
       </div>
 
-      <div className="flex-1 space-y-4 overflow-y-auto px-4 pt-3 pb-4">
+      <div className="hairline mx-5" aria-hidden />
+
+      <div className="flex-1 space-y-5 overflow-y-auto px-5 pt-4 pb-5">
         {hasDetails && (
-          <div className="rounded-xl border border-border bg-card p-3">
-            <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              details
-            </p>
+          <section>
+            <p className="eyebrow mb-2.5">Details</p>
             <div className="space-y-2.5">
               {address && (
                 <div className="flex items-start gap-2.5">
-                  <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                  <span className="text-sm leading-snug">{address}</span>
+                  <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/80" />
+                  <span className="text-[13.5px] leading-snug text-foreground">{address}</span>
                 </div>
               )}
 
@@ -438,19 +468,21 @@ export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLif
                   href={websiteUrl}
                   target="_blank"
                   rel="noreferrer noopener"
-                  className="flex items-center gap-2.5 text-sm text-primary transition-colors hover:underline"
+                  className="flex items-center gap-2.5 text-[13.5px] text-foreground transition-colors hover:text-primary"
                 >
-                  <Globe className="h-4 w-4 shrink-0" />
-                  {formatWebsiteLabel(websiteUrl)}
+                  <Globe className="h-4 w-4 shrink-0 text-muted-foreground/80" />
+                  <span className="underline decoration-foreground/20 underline-offset-4 hover:decoration-primary/60">
+                    {formatWebsiteLabel(websiteUrl)}
+                  </span>
                 </a>
               )}
 
               {phone && (
                 <a
                   href={`tel:${phone}`}
-                  className="flex items-center gap-2.5 text-sm text-primary transition-colors hover:underline"
+                  className="meta-mono flex items-center gap-2.5 text-[12.5px] text-foreground transition-colors hover:text-primary"
                 >
-                  <Phone className="h-4 w-4 shrink-0" />
+                  <Phone className="h-4 w-4 shrink-0 text-muted-foreground/80" />
                   {phone}
                 </a>
               )}
@@ -460,21 +492,21 @@ export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLif
                   href={googleMapsUrl}
                   target="_blank"
                   rel="noreferrer noopener"
-                  className="flex items-center gap-2.5 text-sm text-primary transition-colors hover:underline"
+                  className="flex items-center gap-2.5 text-[13.5px] text-foreground transition-colors hover:text-primary"
                 >
-                  <Clock className="h-4 w-4 shrink-0" />
-                  view hours and directions
+                  <Clock className="h-4 w-4 shrink-0 text-muted-foreground/80" />
+                  <span className="underline decoration-foreground/20 underline-offset-4 hover:decoration-primary/60">
+                    view hours and directions
+                  </span>
                 </a>
               )}
             </div>
-          </div>
+          </section>
         )}
 
         {((showLoadingSkeleton && !workSummary) || workSummary) && (
-          <div className="rounded-xl border border-border bg-card p-3">
-            <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              work summary
-            </p>
+          <section>
+            <p className="eyebrow mb-2.5">Work summary</p>
             {showLoadingSkeleton ? (
               <div className="space-y-2">
                 <div className="h-3 w-full animate-pulse rounded bg-muted" />
@@ -483,20 +515,22 @@ export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLif
               </div>
             ) : workSummary ? (
               <>
-                <p className="text-sm leading-6 text-foreground">{workSummary}</p>
+                <p className="font-display text-[1.05rem] leading-[1.45] text-foreground">
+                  “{workSummary}”
+                </p>
                 {summaryAttribution && (
-                  <p className="mt-2 text-[11px] text-muted-foreground">{summaryAttribution}</p>
+                  <p className="meta-mono mt-2 text-[10px] uppercase text-muted-foreground/80">
+                    {summaryAttribution}
+                  </p>
                 )}
               </>
             ) : null}
-          </div>
+          </section>
         )}
 
         {((showLoadingSkeleton && signals.length === 0) || signals.length > 0) && (
-          <div>
-            <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              work signals
-            </p>
+          <section>
+            <p className="eyebrow mb-2.5">Work signals</p>
             {showLoadingSkeleton ? (
               <div className="flex flex-wrap gap-2">
                 <div className="h-7 w-24 animate-pulse rounded-full bg-muted" />
@@ -504,11 +538,11 @@ export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLif
                 <div className="h-7 w-16 animate-pulse rounded-full bg-muted" />
               </div>
             ) : (
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-1.5">
                 {signals.map(signal => (
                   <span
                     key={signal}
-                    className="flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-medium text-primary"
+                    className="meta-mono flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/8 px-2.5 py-1 text-[10.5px] uppercase text-primary"
                   >
                     {signalIcon(signal)}
                     {signal}
@@ -516,60 +550,58 @@ export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLif
                 ))}
               </div>
             )}
-          </div>
+          </section>
         )}
 
-        <div className="rounded-2xl border border-primary/15 bg-primary/8 p-3">
+        <section className="rounded-2xl border border-primary/18 bg-primary/[0.05] p-4">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-primary/80">
-              passport
-            </p>
-            <p className="mt-1 text-sm font-medium text-foreground">
+            <p className="eyebrow text-primary/75">Passport</p>
+            <p className="font-display mt-1 text-[1.2rem] leading-[1.1] tracking-[-0.01em] text-foreground">
               {checkInLoading
-                ? 'checking your visit history...'
+                ? 'checking your visit history…'
                 : hasVisits
-                  ? `${checkInSummary.visitsCount} visit${checkInSummary.visitsCount === 1 ? '' : 's'} logged`
+                  ? `${checkInSummary.visitsCount} ${checkInSummary.visitsCount === 1 ? 'visit' : 'visits'} logged`
                   : 'no check-ins yet'}
             </p>
             {hasVisits && firstVisitedLabel ? (
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="mt-1 text-[12px] text-muted-foreground">
                 First visit {firstVisitedLabel}
               </p>
             ) : (
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="mt-1 text-[12px] text-muted-foreground">
                 Check in when you start working from this nook.
               </p>
             )}
           </div>
 
-          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+          <div className="mt-4 flex flex-col gap-2">
             {hasVisits ? (
               <>
                 <button
                   onClick={handleViewPreviousVisits}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-border/70 bg-background px-3 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted sm:flex-1"
+                  className="meta-mono flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-border/70 bg-background/70 px-3 py-2.5 text-[10.5px] uppercase text-foreground/85 transition-colors hover:border-border hover:bg-background"
                 >
-                  <History className="h-4 w-4" />
-                  view previous visits
+                  <History className="h-3.5 w-3.5 shrink-0" />
+                  previous visits
                 </button>
                 <button
                   onClick={handleCheckIn}
                   disabled={checkInSubmitting}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-primary/20 bg-primary py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-60 sm:flex-1"
+                  className="meta-mono flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-primary px-3 py-2.5 text-[10.5px] uppercase text-primary-foreground transition-colors hover:bg-primary/92 disabled:pointer-events-none disabled:opacity-60"
                 >
-                  <CirclePlus className="h-4 w-4" />
-                  {checkInSubmitting ? 'checking in...' : 'check in again'}
+                  <CirclePlus className="h-3.5 w-3.5 shrink-0" />
+                  {checkInSubmitting ? 'checking in…' : 'check in again'}
                 </button>
               </>
             ) : (
               <button
                 onClick={handleCheckIn}
                 disabled={checkInSubmitting}
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-primary/20 bg-primary py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-60"
+                className="meta-mono flex w-full min-w-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-primary px-3 py-2.5 text-[10.5px] uppercase text-primary-foreground transition-colors hover:bg-primary/92 disabled:pointer-events-none disabled:opacity-60"
               >
-                <CirclePlus className="h-4 w-4" />
+                <CirclePlus className="h-3.5 w-3.5 shrink-0" />
                 {checkInSubmitting
-                  ? 'checking in...'
+                  ? 'checking in…'
                   : user
                     ? 'check in to nook'
                     : 'sign in to check in'}
@@ -578,9 +610,11 @@ export function NookDetailPanel({ nook, onClose, showPeekLift = false, onPeekLif
           </div>
 
           {checkInFeedback ? (
-            <p className="mt-2 text-xs text-muted-foreground">{checkInFeedback}</p>
+            <p className="mt-2.5 text-[12px] text-muted-foreground font-display italic">
+              {checkInFeedback}
+            </p>
           ) : null}
-        </div>
+        </section>
       </div>
     </div>
   )

@@ -62,3 +62,30 @@ export function getCircleBounds(
     [lng + lngDelta, lat + latDelta],
   ]
 }
+
+/**
+ * Polygon that covers the world MINUS the radius circle (a "donut"). Fill this
+ * with a low-opacity dark color to dim everything outside the search area while
+ * leaving the inside untouched.
+ */
+export function createOutsideMaskPolygon(
+  center: [number, number],
+  radiusM: number,
+  steps = 64,
+): Feature<Polygon> {
+  const circle = createCirclePolygon(center, radiusM, steps)
+  const circleRing = circle.geometry.coordinates[0]
+  const reversedCircleRing = [...circleRing].reverse()
+  const worldRing: [number, number][] = [
+    [-180, -85],
+    [180, -85],
+    [180, 85],
+    [-180, 85],
+    [-180, -85],
+  ]
+  return {
+    type: 'Feature',
+    geometry: { type: 'Polygon', coordinates: [worldRing, reversedCircleRing] },
+    properties: {},
+  }
+}

@@ -242,14 +242,15 @@ export function SearchPill({
   return (
     <div className={cn('relative', fullWidth && 'w-full')}>
       <div className={cn(
-        'flex items-center bg-white/90 backdrop-blur-sm shadow border border-white/50 h-10 overflow-hidden',
+        'flex items-center bg-popover/95 backdrop-blur-md shadow-sm border border-border/50 h-11 overflow-hidden transition-shadow duration-200 ease-out',
         fullWidth ? 'w-full rounded-full' : 'rounded-full',
+        !isOpen && 'hover:shadow-md hover:bg-popover',
       )}>
         <div className="flex items-center pl-4 pr-3 shrink-0">
-          <LogoWordmark className="text-[1.4rem]" />
+          <LogoWordmark className="text-[1.55rem]" />
         </div>
 
-        <div className="w-px h-4 bg-border/40 shrink-0" />
+        <div className="w-px h-5 bg-foreground/10 shrink-0" />
 
         <button
           onClick={fullWidth && isOpen ? collapseSearch : (isOpen ? undefined : openSearch)}
@@ -281,7 +282,7 @@ export function SearchPill({
             onChange={handleInput}
             onKeyDown={handleInputKeyDown}
             onFocus={fullWidth && !isOpen ? openSearch : undefined}
-            placeholder="search anywhere..."
+            placeholder="search anywhere…"
             aria-autocomplete="list"
             aria-controls={listboxId}
             aria-activedescendant={
@@ -289,8 +290,8 @@ export function SearchPill({
             }
             aria-hidden={!fullWidth && !isOpen}
             className={cn(
-              'min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground/60 text-foreground',
-              fullWidth ? 'text-base' : 'text-sm',
+              'min-w-0 flex-1 bg-transparent outline-none placeholder:font-mono placeholder:text-[13.5px] placeholder:tracking-[0.02em] placeholder:text-muted-foreground/65 text-foreground tracking-tight',
+              fullWidth ? 'text-[15px]' : 'text-[14px]',
             )}
             style={fullWidth ? undefined : {
               opacity: isOpen ? 1 : 0,
@@ -322,7 +323,7 @@ export function SearchPill({
         <div
           id={listboxId}
           role={visibleSuggestions.length > 0 ? 'listbox' : undefined}
-          className="absolute top-[calc(100%+8px)] left-0 right-0 bg-background/95 backdrop-blur-sm rounded-xl shadow-xl border border-border overflow-hidden z-50"
+          className="absolute top-[calc(100%+8px)] left-0 right-0 bg-popover/97 backdrop-blur-md rounded-2xl shadow-xl border border-border/50 overflow-hidden z-50"
         >
           {visibleSuggestions.length > 0 ? (
             visibleSuggestions.map((s, i) => {
@@ -337,14 +338,14 @@ export function SearchPill({
                   onClick={() => handleSelect(s)}
                   onMouseEnter={() => setHighlightedSuggestionId(s.id)}
                   className={cn(
-                    'w-full text-left px-4 py-2.5 transition-colors',
-                    activeSuggestionIndex === i ? 'bg-muted' : 'hover:bg-muted',
-                    i < visibleSuggestions.length - 1 && 'border-b border-border/40'
+                    'w-full text-left px-4 py-3 transition-colors',
+                    activeSuggestionIndex === i ? 'bg-muted/70' : 'hover:bg-muted/60',
+                    i < visibleSuggestions.length - 1 && 'border-b border-border/30'
                   )}
                 >
-                  <p className="text-sm font-semibold leading-snug">{s.name}</p>
+                  <p className="font-display text-[1.1rem] leading-[1.15] tracking-[-0.01em] text-foreground">{s.name}</p>
                   {subtitle && (
-                    <p className="text-xs text-muted-foreground mt-0.5 truncate">{subtitle}</p>
+                    <p className="meta-mono text-[10px] uppercase text-muted-foreground mt-1 truncate">{subtitle}</p>
                   )}
                 </button>
               )
@@ -354,7 +355,7 @@ export function SearchPill({
               role="status"
               aria-live="polite"
               aria-atomic="true"
-              className="px-4 py-3 text-xs text-muted-foreground"
+              className="px-4 py-3 text-xs text-muted-foreground font-display italic"
             >
               Search temporarily unavailable
             </p>
