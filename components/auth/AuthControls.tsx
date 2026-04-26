@@ -16,7 +16,7 @@ import type {
   User,
   UserIdentity,
 } from "@supabase/supabase-js";
-import { LoaderCircle, LogOut } from "lucide-react";
+import { LoaderCircle, LogOut, X } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   getUserAvatarUrl,
@@ -34,6 +34,33 @@ type AuthControlsProps = {
   showPassport?: boolean;
   passportIcon?: boolean;
 };
+
+function GoogleLogo({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className={className}
+    >
+      <path
+        fill="#4285F4"
+        d="M23.49 12.27c0-.79-.07-1.54-.2-2.27H12v4.51h6.47c-.28 1.48-1.13 2.74-2.41 3.59v2.98h3.9c2.28-2.1 3.53-5.19 3.53-8.81z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 24c3.24 0 5.95-1.08 7.94-2.92l-3.9-2.98c-1.08.72-2.45 1.16-4.04 1.16-3.11 0-5.74-2.1-6.68-4.93H1.31v3.07C3.29 21.3 7.31 24 12 24z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M5.32 14.33c-.24-.72-.38-1.49-.38-2.33s.14-1.61.38-2.33V6.6H1.31C.48 8.24 0 10.06 0 12s.48 3.76 1.31 5.4l4.01-3.07z"
+      />
+      <path
+        fill="#EA4335"
+        d="M12 4.74c1.76 0 3.34.61 4.59 1.79l3.44-3.44C17.95 1.19 15.24 0 12 0 7.31 0 3.29 2.7 1.31 6.6l4.01 3.07C6.26 6.84 8.89 4.74 12 4.74z"
+      />
+    </svg>
+  );
+}
 
 function getIdentityProviders(user: User | null, identities: UserIdentity[]) {
   const fromIdentities = identities.map((identity) => identity.provider);
@@ -68,6 +95,7 @@ export function AuthControls({ variant, showPassport = true, passportIcon = fals
   const [isMagicLinkLoading, setIsMagicLinkLoading] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const trimmedEmail = email.trim();
+  const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail);
 
   useEffect(() => {
     let isMounted = true;
@@ -230,7 +258,7 @@ export function AuthControls({ variant, showPassport = true, passportIcon = fals
   };
 
   const handleSendMagicLink = async () => {
-    if (!trimmedEmail || isGoogleLoading || isMagicLinkLoading) {
+    if (!isValidEmail || isGoogleLoading || isMagicLinkLoading) {
       return;
     }
 
@@ -448,90 +476,88 @@ export function AuthControls({ variant, showPassport = true, passportIcon = fals
             onClick={closeAuthModal}
             aria-hidden="true"
           />
-          <div className="relative z-10 w-full max-w-sm rounded-3xl border border-border/80 bg-background/98 p-6 shadow-2xl">
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-primary">Welcome back</p>
-              <h2 className="text-2xl font-semibold tracking-tight">
+          <div className="relative z-10 w-full max-w-sm rounded-3xl border border-border/40 bg-background/98 p-7 shadow-2xl">
+            <button
+              type="button"
+              onClick={closeAuthModal}
+              aria-label="Close"
+              className="absolute right-4 top-4 flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <X className="size-4" />
+            </button>
+
+            <div className="space-y-2 pr-8">
+              <h2 className="font-display text-3xl font-medium leading-tight tracking-tight">
                 Sign in to Nook
               </h2>
               <p className="text-sm text-muted-foreground">
                 Save your passport and keep your work spots synced.
               </p>
-              <p className="text-xs text-muted-foreground">
-                Use the same email for Google and magic link to keep one Nook
-                account.
-              </p>
             </div>
 
-            <div className="mt-6 space-y-4">
-              <Button
-                type="button"
-                variant="outline"
-                size="lg"
-                onClick={handleGoogleSignIn}
-                disabled={isGoogleLoading || isMagicLinkLoading}
-                className="h-11 w-full justify-center rounded-2xl bg-card"
-              >
-                {isGoogleLoading ? (
-                  <LoaderCircle className="size-4 animate-spin" />
-                ) : (
-                  <span className="flex size-5 items-center justify-center rounded-full border border-border bg-background text-[11px] font-semibold">
-                    G
-                  </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              onClick={handleGoogleSignIn}
+              disabled={isGoogleLoading || isMagicLinkLoading}
+              className="mt-7 h-11 w-full justify-center gap-3 rounded-2xl border-[#747775] bg-white text-[#1F1F1F] shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:bg-white hover:shadow-md active:translate-y-0 active:shadow-sm"
+            >
+              {isGoogleLoading ? (
+                <LoaderCircle className="size-4 animate-spin text-[#1F1F1F]" />
+              ) : (
+                <GoogleLogo className="size-[18px]" />
+              )}
+              Continue with Google
+            </Button>
+
+            <div className="my-5 flex items-center gap-3">
+              <div className="h-px flex-1 bg-border/60" />
+              <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground/80">
+                or with email
+              </span>
+              <div className="h-px flex-1 bg-border/60" />
+            </div>
+
+            <form className="space-y-3" onSubmit={handleMagicLinkFormSubmit}>
+              <label htmlFor={emailInputId} className="sr-only">
+                Email
+              </label>
+              <input
+                id={emailInputId}
+                type="email"
+                required
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                onKeyDown={handleEmailInputKeyDown}
+                placeholder="you@somewhere.com"
+                autoComplete="email"
+                className={cn(
+                  "h-11 w-full rounded-2xl border border-input bg-card px-4 text-sm outline-none transition-colors",
+                  "placeholder:text-muted-foreground focus:border-primary focus:ring-3 focus:ring-primary/15"
                 )}
-                Continue with Google
-              </Button>
-
-              <div className="flex items-center gap-3">
-                <div className="h-px flex-1 bg-border" />
-                <span className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-                  or
-                </span>
-                <div className="h-px flex-1 bg-border" />
-              </div>
-
-              <form
-                className="space-y-3"
-                onSubmit={handleMagicLinkFormSubmit}
+              />
+              <Button
+                type="submit"
+                variant={isValidEmail ? "default" : "outline"}
+                size="lg"
+                disabled={
+                  !isValidEmail || isGoogleLoading || isMagicLinkLoading
+                }
+                className={cn(
+                  "h-11 w-full rounded-2xl shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:shadow-sm disabled:hover:translate-y-0 disabled:hover:shadow-sm",
+                  !isValidEmail && "bg-card"
+                )}
               >
-                <label
-                  htmlFor={emailInputId}
-                  className="text-sm font-medium text-foreground"
-                >
-                  Email
-                </label>
-                <input
-                  id={emailInputId}
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  onKeyDown={handleEmailInputKeyDown}
-                  placeholder="you@somewhere.com"
-                  autoComplete="email"
-                  className={cn(
-                    "h-11 w-full rounded-2xl border border-input bg-card px-4 text-sm outline-none transition-colors",
-                    "placeholder:text-muted-foreground focus:border-primary focus:ring-3 focus:ring-primary/15"
-                  )}
-                />
-                <Button
-                  type="submit"
-                  size="lg"
-                  disabled={
-                    !trimmedEmail || isGoogleLoading || isMagicLinkLoading
-                  }
-                  className="h-11 w-full rounded-2xl"
-                >
-                  {isMagicLinkLoading && (
-                    <LoaderCircle className="size-4 animate-spin" />
-                  )}
-                  Send magic link
-                </Button>
-              </form>
-            </div>
+                {isMagicLinkLoading && (
+                  <LoaderCircle className="size-4 animate-spin" />
+                )}
+                Send magic link
+              </Button>
+            </form>
 
             {statusMessage && (
-              <p className="mt-4 text-sm text-muted-foreground">
+              <p className="mt-5 text-sm text-muted-foreground">
                 {statusMessage}
               </p>
             )}
