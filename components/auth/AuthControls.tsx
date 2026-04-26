@@ -16,7 +16,7 @@ import type {
   User,
   UserIdentity,
 } from "@supabase/supabase-js";
-import { LoaderCircle, LogOut, X } from "lucide-react";
+import { BookMarked, LoaderCircle, LogOut, X } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   getUserAvatarUrl,
@@ -364,13 +364,7 @@ export function AuthControls({ variant, showPassport = true, passportIcon = fals
             className="flex size-10 items-center justify-center rounded-full border border-border/50 bg-popover/95 shadow backdrop-blur-sm transition-all duration-200 ease-out hover:bg-popover hover:scale-105 active:scale-95"
             aria-label="My passport"
           >
-            <Image
-              src="/icons/passport.png"
-              alt=""
-              width={22}
-              height={22}
-              className="object-contain"
-            />
+            <BookMarked className="size-5 text-foreground/85" strokeWidth={1.75} aria-hidden="true" />
           </button>
         ) : showPassport && (
           <button

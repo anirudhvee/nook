@@ -10,9 +10,6 @@ const nextConfig: NextConfig = {
       {
         pathname: "/api/places/photo",
       },
-      {
-        pathname: "/icons/**",
-      },
     ],
     remotePatterns: [
       {
