@@ -2226,6 +2226,8 @@ export function DiscoveryMap({
                   'flex items-center gap-2 px-3 pb-2 -mt-1 overflow-x-auto no-scrollbar transition-opacity duration-200 ease-out',
                   mobileSheetSnap === 'full' && 'opacity-0 pointer-events-none',
                 )}
+                inert={mobileSheetSnap === 'full'}
+                aria-hidden={mobileSheetSnap === 'full' ? true : undefined}
               >
                 {FILTERS.map(({ id, label }) => (
                   <button
