@@ -298,7 +298,7 @@ export function SearchPill({
             aria-hidden={!fullWidth && !isOpen}
             className={cn(
               'min-w-0 flex-1 bg-transparent outline-none placeholder:font-mono placeholder:text-[13.5px] placeholder:tracking-[0.02em] placeholder:text-muted-foreground/65 text-foreground tracking-tight',
-              fullWidth ? 'text-[15px]' : 'text-[14px]',
+              fullWidth ? 'text-[16px]' : 'text-[14px]',
             )}
             style={fullWidth ? undefined : {
               opacity: isOpen ? 1 : 0,
