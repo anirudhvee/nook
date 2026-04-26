@@ -160,6 +160,12 @@ function ensureMap(): Promise<void> {
     }
     mapInstance.once('load', onLoad)
     mapInstance.on('error', onError)
+  }).catch((err) => {
+    // Reset so the next request retries instead of inheriting a permanently
+    // rejected promise (e.g. after a transient tile-load failure).
+    mapReady = null
+    mapInstance = null
+    throw err
   })
 
   return mapReady
