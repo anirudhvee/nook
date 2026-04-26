@@ -246,11 +246,18 @@ export function SearchPill({
         fullWidth ? 'w-full rounded-full' : 'rounded-full',
         !isOpen && 'hover:shadow-md hover:bg-popover',
       )}>
-        <div className="flex items-center pl-4 pr-3 shrink-0">
-          <LogoWordmark className="text-[1.55rem]" />
+        <div
+          className={cn(
+            'flex items-center shrink-0 overflow-hidden transition-[max-width,opacity] duration-300 ease-out',
+            fullWidth && isOpen ? 'max-w-0 opacity-0' : 'max-w-[200px] opacity-100',
+          )}
+          aria-hidden={fullWidth && isOpen ? true : undefined}
+        >
+          <div className="flex items-center pl-4 pr-3 shrink-0">
+            <LogoWordmark className="text-[1.55rem]" />
+          </div>
+          <div className="w-px h-5 bg-foreground/10 shrink-0" />
         </div>
-
-        <div className="w-px h-5 bg-foreground/10 shrink-0" />
 
         <button
           onClick={fullWidth && isOpen ? collapseSearch : (isOpen ? undefined : openSearch)}

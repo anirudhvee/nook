@@ -757,6 +757,8 @@ export function DiscoveryMap({
   const mobileTopBarRef = useRef<HTMLDivElement>(null)
   const [mobileTopBarHeight, setMobileTopBarHeight] = useState<number>(MOBILE_SHEET_HEADER_H)
   const mobileTopBarHeightRef = useRef<number>(MOBILE_SHEET_HEADER_H)
+  const mobileSearchRowRef = useRef<HTMLDivElement>(null)
+  const [mobileSearchRowHeight, setMobileSearchRowHeight] = useState<number>(64)
 
   useEffect(() => { showLocDeniedBannerRef.current = showLocDeniedBanner }, [showLocDeniedBanner])
 
@@ -947,16 +949,25 @@ export function DiscoveryMap({
       return
     }
     const el = mobileTopBarRef.current
+    const searchEl = mobileSearchRowRef.current
     if (!el) return
     const update = () => {
       const next = Math.round(el.getBoundingClientRect().height)
-      if (next <= 0) return
-      mobileTopBarHeightRef.current = next
-      setMobileTopBarHeight(prev => (prev === next ? prev : next))
+      if (next > 0) {
+        mobileTopBarHeightRef.current = next
+        setMobileTopBarHeight(prev => (prev === next ? prev : next))
+      }
+      if (searchEl) {
+        const nextSearch = Math.round(searchEl.getBoundingClientRect().height)
+        if (nextSearch > 0) {
+          setMobileSearchRowHeight(prev => (prev === nextSearch ? prev : nextSearch))
+        }
+      }
     }
     update()
     const ro = new ResizeObserver(update)
     ro.observe(el)
+    if (searchEl) ro.observe(searchEl)
     return () => ro.disconnect()
   }, [isMobile])
 
@@ -2186,9 +2197,12 @@ export function DiscoveryMap({
 
       {isMobile && (
         <>
-          <div ref={mobileTopBarRef} className="absolute top-0 left-0 right-0 z-30">
+          <div
+            ref={mobileTopBarRef}
+            className="absolute top-0 left-0 right-0 z-30"
+          >
             <div className="bg-gradient-to-b from-background/90 via-background/50 to-transparent">
-              <div className="flex items-center gap-2 px-3 pt-3 pb-0">
+              <div ref={mobileSearchRowRef} className="flex items-center gap-2 px-3 pt-3 pb-3">
                 <div className="flex-1 min-w-0">
                   <SearchPill
                     fullWidth
@@ -2207,28 +2221,33 @@ export function DiscoveryMap({
                 <AuthControls variant="map" passportIcon />
               </div>
 
-              <div className="flex px-3 pt-2 pb-2 overflow-x-auto no-scrollbar">
-                <div className="mx-auto flex items-center gap-0.5 rounded-full bg-popover border border-border/60 shadow-md p-1">
-                  {FILTERS.map(({ id, label }) => (
-                    <button
-                      key={id}
-                      onClick={() => {
-                        if (selectedSearchLocation === null && mapSyncModeRef.current === 'frozen') {
-                          mapSyncModeRef.current = 'nearby'
-                        }
-                        setFilter(id)
-                      }}
-                      className={cn(
-                        'inline-flex items-center justify-center rounded-full px-3.5 py-1.5 text-sm whitespace-nowrap shrink-0 transition-all duration-200 ease-out',
-                        filter === id
-                          ? 'bg-primary text-primary-foreground shadow-sm'
-                          : 'text-foreground/70 hover:bg-secondary/70 hover:text-foreground hover:scale-105 active:scale-95',
-                      )}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
+              <div
+                className={cn(
+                  'flex items-center gap-2 px-3 pb-2 -mt-1 overflow-x-auto no-scrollbar transition-opacity duration-200 ease-out',
+                  mobileSheetSnap === 'full' && 'opacity-0 pointer-events-none',
+                )}
+                inert={mobileSheetSnap === 'full'}
+                aria-hidden={mobileSheetSnap === 'full' ? true : undefined}
+              >
+                {FILTERS.map(({ id, label }) => (
+                  <button
+                    key={id}
+                    onClick={() => {
+                      if (selectedSearchLocation === null && mapSyncModeRef.current === 'frozen') {
+                        mapSyncModeRef.current = 'nearby'
+                      }
+                      setFilter(id)
+                    }}
+                    className={cn(
+                      'inline-flex items-center justify-center rounded-full px-3.5 py-1.5 text-[13px] whitespace-nowrap shrink-0 border shadow-sm transition-all duration-200 ease-out',
+                      filter === id
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-popover/95 text-foreground/80 border-border/60 hover:bg-popover hover:text-foreground active:scale-95',
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
             </div>
           </div>
@@ -2236,6 +2255,7 @@ export function DiscoveryMap({
           <MobileBottomSheet
             snapPoint={mobileSheetSnap}
             onSnapChange={handleMobileSnapChange}
+            topInset={mobileSearchRowHeight}
           >
             {mobileSheetContent === 'passport' && (
               <PassportOverlay
