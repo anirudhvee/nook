@@ -420,7 +420,7 @@ function darken(hex: string, amount: number): string {
 }
 function shiftHex(hex: string, amount: number): string {
   const h = hex.replace('#', '')
-  const channels = [0, 1, 1, 2].slice(0, 3).map((_, i) => {
+  const channels = [0, 1, 2].map((i) => {
     const value = parseInt(h.slice(i * 2, i * 2 + 2), 16)
     const shifted = Math.max(0, Math.min(255, Math.round(value + amount * 255)))
     return shifted.toString(16).padStart(2, '0')

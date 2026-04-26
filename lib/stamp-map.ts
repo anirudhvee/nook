@@ -7,6 +7,7 @@ const SNAPSHOT_SIZE = 384
 const SNAPSHOT_ZOOM = 14
 const CACHE_PREFIX = 'nook:stamp-map:v1:'
 const CACHE_VERSION_KEY = 'nook:stamp-map:version'
+const CACHE_INDEX_KEY = 'nook:stamp-map:index'
 const CURRENT_VERSION = '2'
 
 interface QueueItem {
@@ -24,6 +25,33 @@ const queue: QueueItem[] = []
 const inFlight = new Map<string, Promise<string>>()
 let isProcessing = false
 
+function readIndex(): string[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = window.localStorage.getItem(CACHE_INDEX_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function writeIndex(index: string[]) {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(CACHE_INDEX_KEY, JSON.stringify(index))
+  } catch {
+    // If even the index can't be saved, recency tracking degrades gracefully.
+  }
+}
+
+function bumpIndex(nookId: string) {
+  const index = readIndex().filter((id) => id !== nookId)
+  index.unshift(nookId)
+  writeIndex(index)
+}
+
 function ensureCacheVersion() {
   if (typeof window === 'undefined') return
   try {
@@ -34,6 +62,7 @@ function ensureCacheVersion() {
         const key = window.localStorage.key(i)
         if (key?.startsWith(CACHE_PREFIX)) window.localStorage.removeItem(key)
       }
+      window.localStorage.removeItem(CACHE_INDEX_KEY)
       window.localStorage.setItem(CACHE_VERSION_KEY, CURRENT_VERSION)
     }
   } catch {
@@ -44,7 +73,9 @@ function ensureCacheVersion() {
 function readCache(nookId: string): string | null {
   if (typeof window === 'undefined') return null
   try {
-    return window.localStorage.getItem(CACHE_PREFIX + nookId)
+    const value = window.localStorage.getItem(CACHE_PREFIX + nookId)
+    if (value) bumpIndex(nookId)
+    return value
   } catch {
     return null
   }
@@ -52,10 +83,29 @@ function readCache(nookId: string): string | null {
 
 function writeCache(nookId: string, dataUrl: string) {
   if (typeof window === 'undefined') return
-  try {
-    window.localStorage.setItem(CACHE_PREFIX + nookId, dataUrl)
-  } catch {
-    // Quota exceeded — silently drop. The next view will re-snapshot.
+  const key = CACHE_PREFIX + nookId
+  // Try writing; on quota errors, evict the LRU entry and retry until the
+  // write succeeds or there's nothing left to evict. The next view of any
+  // evicted stamp will re-snapshot via the off-screen MapLibre instance.
+  for (let attempt = 0; attempt < 32; attempt++) {
+    try {
+      window.localStorage.setItem(key, dataUrl)
+      bumpIndex(nookId)
+      return
+    } catch {
+      const index = readIndex()
+      const oldest = index.pop()
+      if (!oldest || oldest === nookId) {
+        // Nothing left to evict — give up silently.
+        return
+      }
+      try {
+        window.localStorage.removeItem(CACHE_PREFIX + oldest)
+      } catch {
+        return
+      }
+      writeIndex(index)
+    }
   }
 }
 
