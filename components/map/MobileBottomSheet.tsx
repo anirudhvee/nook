@@ -21,12 +21,12 @@ function readViewportHeight(): number | null {
   return Math.round(window.visualViewport?.height ?? window.innerHeight)
 }
 
-function getSheetHeight(viewportHeight: number): number {
-  return Math.max(viewportHeight - HEADER_H, 0)
+function getSheetHeight(viewportHeight: number, headerH: number): number {
+  return Math.max(viewportHeight - headerH, 0)
 }
 
-function computeSnapPx(snap: SnapPoint, viewportHeight: number): number {
-  const sheetH = getSheetHeight(viewportHeight)
+function computeSnapPx(snap: SnapPoint, viewportHeight: number, headerH: number): number {
+  const sheetH = getSheetHeight(viewportHeight, headerH)
   switch (snap) {
     case 'peek': return sheetH - PEEK_H
     case 'half': return sheetH - getMobileHalfVisibleHeight(viewportHeight)
@@ -34,10 +34,10 @@ function computeSnapPx(snap: SnapPoint, viewportHeight: number): number {
   }
 }
 
-function nearestSnap(px: number, viewportHeight: number): SnapPoint {
+function nearestSnap(px: number, viewportHeight: number, headerH: number): SnapPoint {
   return SNAP_ORDER.reduce<SnapPoint>((best, s) => {
-    const bDist = Math.abs(computeSnapPx(best, viewportHeight) - px)
-    const sDist = Math.abs(computeSnapPx(s, viewportHeight) - px)
+    const bDist = Math.abs(computeSnapPx(best, viewportHeight, headerH) - px)
+    const sDist = Math.abs(computeSnapPx(s, viewportHeight, headerH) - px)
     return sDist < bDist ? s : best
   }, 'half')
 }
@@ -46,9 +46,15 @@ interface Props {
   snapPoint: SnapPoint
   onSnapChange: (snap: SnapPoint) => void
   children: React.ReactNode
+  topInset?: number
 }
 
-export function MobileBottomSheet({ snapPoint, onSnapChange, children }: Props) {
+export function MobileBottomSheet({ snapPoint, onSnapChange, children, topInset }: Props) {
+  const effectiveHeaderH = topInset ?? HEADER_H
+  const effectiveHeaderHRef = useRef(effectiveHeaderH)
+  useLayoutEffect(() => {
+    effectiveHeaderHRef.current = effectiveHeaderH
+  }, [effectiveHeaderH])
   const [dragPx, setDragPx] = useState<number | null>(null)
   const [settlingSnap, setSettlingSnap] = useState<SnapPoint | null>(null)
   const [viewportHeight, setViewportHeight] = useState<number | null>(null)
@@ -96,7 +102,7 @@ export function MobileBottomSheet({ snapPoint, onSnapChange, children }: Props) 
     isDragging.current      = true
     hasDraggedRef.current   = false
     touchStartY.current     = startY
-    touchStartSnapPx.current = computeSnapPx(snapPointRef.current, currentViewportHeight)
+    touchStartSnapPx.current = computeSnapPx(snapPointRef.current, currentViewportHeight, effectiveHeaderHRef.current)
     lastTouchY.current      = startY
     lastTouchTime.current   = Date.now()
     velocityRef.current     = 0
@@ -116,7 +122,7 @@ export function MobileBottomSheet({ snapPoint, onSnapChange, children }: Props) 
     lastTouchTime.current = now
 
     const delta  = currentY - touchStartY.current
-    const sheetH = getSheetHeight(currentViewportHeight)
+    const sheetH = getSheetHeight(currentViewportHeight, effectiveHeaderHRef.current)
     const newPx  = Math.max(0, Math.min(touchStartSnapPx.current + delta, sheetH - PEEK_H))
 
     if (Math.abs(delta) > 4) hasDraggedRef.current = true
@@ -147,8 +153,9 @@ export function MobileBottomSheet({ snapPoint, onSnapChange, children }: Props) 
       next = SNAP_ORDER[Math.min(SNAP_ORDER.length - 1, currentIdx + 1)]
     } else {
       next = nearestSnap(
-        dragPxRef.current ?? computeSnapPx(snapPointRef.current, currentViewportHeight),
+        dragPxRef.current ?? computeSnapPx(snapPointRef.current, currentViewportHeight, effectiveHeaderHRef.current),
         currentViewportHeight,
+        effectiveHeaderHRef.current,
       )
     }
 
@@ -246,9 +253,9 @@ export function MobileBottomSheet({ snapPoint, onSnapChange, children }: Props) 
     ? `${dragPx}px`
     : resolvedViewportHeight === null
       ? `translateY(${restingSnap === 'full' ? '0px' : restingSnap === 'peek'
-        ? `calc(100dvh - ${HEADER_H}px - ${PEEK_H}px)`
-        : `calc(${(1 - HALF_VISIBLE_RATIO) * 100}dvh - ${HEADER_H}px)`})`
-      : `${computeSnapPx(restingSnap, resolvedViewportHeight)}px`
+        ? `calc(100dvh - ${effectiveHeaderH}px - ${PEEK_H}px)`
+        : `calc(${(1 - HALF_VISIBLE_RATIO) * 100}dvh - ${effectiveHeaderH}px)`})`
+      : `${computeSnapPx(restingSnap, resolvedViewportHeight, effectiveHeaderH)}px`
   const animate    = dragPx === null
 
   return (
@@ -263,8 +270,8 @@ export function MobileBottomSheet({ snapPoint, onSnapChange, children }: Props) 
       )}
       style={{
         height: resolvedViewportHeight === null
-          ? `calc(100dvh - ${HEADER_H}px)`
-          : `${getSheetHeight(resolvedViewportHeight)}px`,
+          ? `calc(100dvh - ${effectiveHeaderH}px)`
+          : `${getSheetHeight(resolvedViewportHeight, effectiveHeaderH)}px`,
         transform: resolvedViewportHeight === null && dragPx === null
           ? translateY
           : `translateY(${translateY})`,
