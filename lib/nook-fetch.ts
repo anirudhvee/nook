@@ -1,10 +1,7 @@
-import { headers } from 'next/headers'
-import { Suspense } from 'react'
-import { DiscoveryMapLoader } from '@/components/map/DiscoveryMapLoader'
+import 'server-only'
+
 import { createAdminSupabaseClient } from '@/lib/supabase-admin'
 import type { NookPlace, NookType } from '@/types/nook'
-
-const SF_FALLBACK: [number, number] = [-122.4194, 37.7749]
 
 type NookRow = {
   id: string
@@ -22,13 +19,16 @@ type NookRow = {
   phone: string | null
   operating_status: string | null
   seed_run_id: string | null
-  nook_overrides?: {
-    address_override: string | null
-    operating_status_override: string | null
-  }[] | {
-    address_override: string | null
-    operating_status_override: string | null
-  } | null
+  nook_overrides?:
+    | {
+        address_override: string | null
+        operating_status_override: string | null
+      }[]
+    | {
+        address_override: string | null
+        operating_status_override: string | null
+      }
+    | null
 }
 
 function toNookType(value: string | null): NookType {
@@ -36,9 +36,7 @@ function toNookType(value: string | null): NookType {
   return 'other'
 }
 
-async function getInitialSelectedNook(slug?: string | null): Promise<NookPlace | null> {
-  if (!slug) return null
-
+export async function fetchNookBySlug(slug: string): Promise<NookPlace | null> {
   const supabase = createAdminSupabaseClient()
   const { data, error } = await supabase
     .from('nooks')
@@ -70,8 +68,9 @@ async function getInitialSelectedNook(slug?: string | null): Promise<NookPlace |
 
   const row = data as NookRow
   const override = Array.isArray(row.nook_overrides)
-    ? (row.nook_overrides[0] ?? null)
-    : (row.nook_overrides ?? null)
+    ? row.nook_overrides[0] ?? null
+    : row.nook_overrides ?? null
+
   return {
     id: row.id,
     slug: row.slug,
@@ -86,22 +85,8 @@ async function getInitialSelectedNook(slug?: string | null): Promise<NookPlace |
     country: row.country,
     website: row.website,
     phone: row.phone,
-    operating_status: override?.operating_status_override ?? row.operating_status ?? 'active',
+    operating_status:
+      override?.operating_status_override ?? row.operating_status ?? 'active',
     seed_run_id: row.seed_run_id,
   }
-}
-
-export async function DiscoveryPage({ selectedNookSlug }: { selectedNookSlug?: string | null } = {}) {
-  const h = await headers()
-  const lat = parseFloat(h.get('x-vercel-ip-latitude') ?? '')
-  const lng = parseFloat(h.get('x-vercel-ip-longitude') ?? '')
-  const initialCenter: [number, number] =
-    Number.isFinite(lat) && Number.isFinite(lng) ? [lng, lat] : SF_FALLBACK
-  const initialSelectedNook = await getInitialSelectedNook(selectedNookSlug)
-
-  return (
-    <Suspense fallback={<div className="h-screen w-screen bg-muted" />}>
-      <DiscoveryMapLoader initialCenter={initialCenter} initialSelectedNook={initialSelectedNook} />
-    </Suspense>
-  )
 }

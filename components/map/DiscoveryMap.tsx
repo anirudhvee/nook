@@ -2,7 +2,7 @@
 
 import type { CSSProperties, ReactNode } from 'react'
 import { useRef, useEffect, useLayoutEffect, useState, useCallback, useMemo } from 'react'
-import { usePathname, useSearchParams } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import maplibregl from 'maplibre-gl'
 import {
   ChevronUp,
@@ -19,6 +19,7 @@ import { AuthControls } from '@/components/auth/AuthControls'
 import { NOOK_TYPE_LABELS } from '@/types/nook'
 import type { NookPlace, NookType, FilterType } from '@/types/nook'
 import { NookDetailPanel } from '@/components/nook/NookDetailPanel'
+import { useNookStore } from '@/lib/store/nookStore'
 import { SearchPill } from '@/components/map/SearchPill'
 import {
   DEFAULT_RADIUS_M,
@@ -43,6 +44,7 @@ import {
   PEEK_H as MOBILE_SHEET_PEEK_H,
   MobileBottomSheet,
   getMobileHalfVisibleHeight,
+  getMobileSheetVisibleHeight,
   type SnapPoint,
 } from '@/components/map/MobileBottomSheet'
 
@@ -591,17 +593,11 @@ function PlacesPanel({
                 'group relative w-full text-left rounded-xl px-2.5 py-3 transform-gpu will-change-transform transition-all duration-200',
                 'border border-transparent',
                 isSelected
-                  ? 'bg-primary/[0.06] border-primary/20'
+                  ? '-translate-y-0.5 shadow-md bg-muted/40 border-primary/10 z-10'
                   : 'hover:-translate-y-0.5 hover:shadow-md hover:bg-muted/40 hover:border-primary/10 hover:z-10 hover:rounded-xl',
                 !isLast && !isSelected && 'border-b-border/30 rounded-none border-b [&:has(+button:hover)]:border-b-transparent',
               )}
             >
-              {isSelected && (
-                <span
-                  aria-hidden
-                  className="absolute left-0 top-3 bottom-3 w-[2px] rounded-full bg-primary/60"
-                />
-              )}
               <div className="flex items-start gap-3">
                 <div
                   className="category-swatch shrink-0 h-14 w-14"
@@ -658,16 +654,16 @@ function PlacesPanel({
 
 export function DiscoveryMap({
   initialCenter,
-  initialSelectedNook = null,
 }: {
   initialCenter: [number, number]
-  initialSelectedNook?: NookPlace | null
 }) {
   const restoredNearbyOrigin = typeof window === 'undefined'
     ? null
     : readCachedUserLocation()
+  const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const detailNook = useNookStore(state => state.selectedNook)
   const urlSearchLocation = useMemo(
     () => getSearchContextFromParams(searchParams),
     [searchParams],
@@ -675,10 +671,6 @@ export function DiscoveryMap({
   const urlSearchLocationKey = getSearchLocationKey(urlSearchLocation)
   const isPassportOpen = isPassportPath(pathname)
   const urlSelectedNookSlug = getSelectedNookSlugFromUrl(pathname)
-  const routeBootCenter = useMemo<[number, number] | null>(
-    () => initialSelectedNook ? [initialSelectedNook.lng, initialSelectedNook.lat] : null,
-    [initialSelectedNook],
-  )
   const globeCanvasRef = useRef<HTMLCanvasElement>(null)
   const globeStarsRef = useRef<GlobeStar[]>([])
   if (globeStarsRef.current.length === 0) {
@@ -699,8 +691,9 @@ export function DiscoveryMap({
   const passportRotationTokenRef = useRef(0)
   const passportOpenRef = useRef(false)
   const passportCloseHandledRef = useRef(false)
-  const selectedIdRef = useRef<string | null>(initialSelectedNook?.id ?? null)
-  const detailNookRef = useRef<NookPlace | null>(initialSelectedNook)
+  const selectedIdRef = useRef<string | null>(null)
+  // Previous slug so sync(null) can detect a detail→discovery transition.
+  const prevDetailSlugRef = useRef<string | null>(urlSelectedNookSlug)
   const requestedNookIdRef = useRef<string | null>(null)
   const primaryColorRef = useRef(COLOR_NORMAL)
   const darkerPrimaryRef = useRef(COLOR_SELECTED)
@@ -725,8 +718,8 @@ export function DiscoveryMap({
   const [nearbyNooks, setNearbyNooks] = useState<NookPlace[]>([])
   const [searchedNooks, setSearchedNooks] = useState<NookPlace[]>([])
   const [mapNooks, setMapNooks] = useState<NookPlace[]>([])
-  const [selectedId, setSelectedId] = useState<string | null>(() => initialSelectedNook?.id ?? null)
-  const [detailNook, setDetailNook] = useState<NookPlace | null>(() => initialSelectedNook)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const mobileSheetSnapRef = useRef<SnapPoint>('half')
   const [filter, setFilter] = useState<FilterType>('all')
   const [realUserLoc, setRealUserLoc] = useState<[number, number] | null>(() => restoredNearbyOrigin)
   const [nearbyOrigin, setNearbyOrigin] = useState<[number, number] | null>(() => restoredNearbyOrigin)
@@ -761,6 +754,7 @@ export function DiscoveryMap({
   const [mobileSearchRowHeight, setMobileSearchRowHeight] = useState<number>(64)
 
   useEffect(() => { showLocDeniedBannerRef.current = showLocDeniedBanner }, [showLocDeniedBanner])
+  useEffect(() => { mobileSheetSnapRef.current = mobileSheetSnap }, [mobileSheetSnap])
 
   useLayoutEffect(() => {
     const mq = window.matchMedia('(max-width: 767px)')
@@ -900,8 +894,8 @@ export function DiscoveryMap({
     if (isPassportOpen) setMobileSheetSnap('half')
   }, [isPassportOpen, isMobile])
 
-  // Whenever the user opens or switches to a nook detail on mobile, force the
-  // sheet down to half so the map (and the just-selected pin) stays visible.
+  // Two effects snap to half: one on store change (marker/list click), one on
+  // URL change (Link-driven nav from passport, where URL updates before store).
   const prevDetailNookIdRef = useRef<string | null>(null)
   useEffect(() => {
     const prevId = prevDetailNookIdRef.current
@@ -911,6 +905,15 @@ export function DiscoveryMap({
     if (!currentId || currentId === prevId) return
     setMobileSheetSnap('half')
   }, [detailNook, isMobile])
+
+  const prevDetailUrlSlugRef = useRef<string | null>(urlSelectedNookSlug)
+  useEffect(() => {
+    const prev = prevDetailUrlSlugRef.current
+    prevDetailUrlSlugRef.current = urlSelectedNookSlug
+    if (!isMobile) return
+    if (!urlSelectedNookSlug || urlSelectedNookSlug === prev) return
+    setMobileSheetSnap('half')
+  }, [urlSelectedNookSlug, isMobile])
 
   useEffect(() => {
     if (!isMobile) {
@@ -1068,10 +1071,9 @@ export function DiscoveryMap({
       if (marker) setMarkerColor(marker, primaryColorRef.current)
     }
 
-    setDetailNook(null)
+    useNookStore.getState().clearSelectedNook()
     setSelectedId(null)
     selectedIdRef.current = null
-    detailNookRef.current = null
   }, [])
 
   const clearSelectedNook = useCallback(() => {
@@ -1349,9 +1351,14 @@ export function DiscoveryMap({
     const marker = pointMarkersRef.current.get(nook.id)
     if (marker) setMarkerColor(marker, darkerPrimaryRef.current)
 
-    mapRef.current?.flyTo({ center: [nook.lng, nook.lat], zoom: 15, speed: 1.8 })
-    setDetailNook(nook)
-    detailNookRef.current = nook
+    const map = mapRef.current
+    if (map) {
+      const currentZoom = map.getZoom()
+      const zoomDelta = Math.abs(15 - currentZoom)
+      const duration = zoomDelta > 4 ? 1800 : 900
+      map.flyTo({ center: [nook.lng, nook.lat], zoom: 15, duration, essential: true })
+    }
+    useNookStore.getState().setSelectedNook(nook)
   }, [])
 
   const handleSelectNook = useCallback((nook: NookPlace) => {
@@ -1360,9 +1367,9 @@ export function DiscoveryMap({
     const searchLocation = mapSyncModeRef.current === 'search'
       ? selectedSearchLocationRef.current
       : null
-    window.history.pushState(null, '', getNookUrl(nook.slug, searchLocation))
+    router.push(getNookUrl(nook.slug, searchLocation))
     if (isMobileRef.current) setMobileSheetSnap('half')
-  }, [applySelectedNook])
+  }, [applySelectedNook, router])
 
   const handlePanelClose = useCallback(() => {
     requestedNookIdRef.current = null
@@ -1370,9 +1377,9 @@ export function DiscoveryMap({
     const searchLocation = mapSyncModeRef.current === 'search'
       ? selectedSearchLocationRef.current
       : null
-    window.history.replaceState(null, '', getDiscoveryUrl(searchLocation))
+    router.push(getDiscoveryUrl(searchLocation))
     if (isMobileRef.current) setMobileSheetSnap('half')
-  }, [clearSelectedNookState])
+  }, [clearSelectedNookState, router])
 
   const hideNearbyMarkers = useCallback(() => {
     pointMarkersRef.current.forEach(marker => {
@@ -1438,9 +1445,14 @@ export function DiscoveryMap({
 
     const getPassportGlobePadding = () => {
       if (isMobileRef.current) {
+        const visibleSheet = getMobileSheetVisibleHeight(
+          mobileSheetSnapRef.current,
+          getCurrentViewportHeight(),
+          MOBILE_HEADER_H,
+        )
         return {
           top: MOBILE_HEADER_H,
-          bottom: Math.round(getMobileHalfVisibleHeight(getCurrentViewportHeight())) + 10,
+          bottom: Math.round(visibleSheet) + 10,
           left: 20,
           right: 20,
         }
@@ -1590,14 +1602,24 @@ export function DiscoveryMap({
 
   const syncSelectedNookFromUrl = useCallback((slug: string | null) => {
     if (!slug) {
+      const wasSelected = prevDetailSlugRef.current !== null
       requestedNookIdRef.current = null
       clearSelectedNookState()
+      if (wasSelected && !isSearchRouteActive() && !passportOpenRef.current) {
+        const target = resolveNearbyRestoreTarget()
+        void loadNearbyPlaces(target, filter, {
+          forceMapUpdate: true,
+          mapTarget: 'nearby',
+          updateMap: true,
+        })
+        mapRef.current?.flyTo({ center: target, zoom: 14, duration: 1000 })
+      }
       return
     }
 
-    if (detailNookRef.current?.slug === slug) {
+    if (useNookStore.getState().selectedNook?.slug === slug) {
       requestedNookIdRef.current = null
-      const restoredNook = detailNookRef.current
+      const restoredNook = useNookStore.getState().selectedNook
       const map = mapRef.current
       if (restoredNook && map && mapLoadedRef.current) {
         const center = map.getCenter()
@@ -1606,10 +1628,13 @@ export function DiscoveryMap({
           [restoredNook.lat, restoredNook.lng],
         )
         if (centerDistance > 50 || map.getZoom() < 14.5) {
+          const zoomDelta = Math.abs(15 - map.getZoom())
+          const duration = zoomDelta > 4 ? 1800 : 900
           map.flyTo({
             center: [restoredNook.lng, restoredNook.lat],
             zoom: 15,
-            speed: 1.8,
+            duration,
+            essential: true,
           })
         }
       }
@@ -1627,17 +1652,27 @@ export function DiscoveryMap({
 
     requestedNookIdRef.current = slug
     clearSelectedNookState()
-    void fetchNookBySlug(slug).then(nook => {
+    // Defer to a microtask so NookHydrator can populate the store first;
+    // skips the redundant fetch on direct loads. Apply-time guard catches
+    // the race if effect ordering ever changes.
+    queueMicrotask(() => {
       if (requestedNookIdRef.current !== slug) return
-      if (!nook) return
-
-      applySelectedNook(nook)
-    }).finally(() => {
-      if (requestedNookIdRef.current === slug) {
+      if (useNookStore.getState().selectedNook?.slug === slug) {
         requestedNookIdRef.current = null
+        return
       }
+      void fetchNookBySlug(slug).then(nook => {
+        if (requestedNookIdRef.current !== slug) return
+        if (!nook) return
+        if (useNookStore.getState().selectedNook?.id === nook.id) return
+        applySelectedNook(nook)
+      }).finally(() => {
+        if (requestedNookIdRef.current === slug) {
+          requestedNookIdRef.current = null
+        }
+      })
     })
-  }, [applySelectedNook, clearSelectedNookState, fetchNookBySlug])
+  }, [applySelectedNook, clearSelectedNookState, fetchNookBySlug, filter, isSearchRouteActive, loadNearbyPlaces, resolveNearbyRestoreTarget])
 
   const prevPassportOpenRef = useRef(false)
   useEffect(() => {
@@ -1660,6 +1695,8 @@ export function DiscoveryMap({
         ? { top: MOBILE_H, bottom: Math.round(getMobileHalfVisibleHeight(getCurrentViewportHeight())), left: 0, right: 0 }
         : zeroPad
       mapRef.current?.setPadding(resetPad)
+      // Transitioning to a selected nook: let syncSelectedNookFromUrl drive the camera.
+      if (urlSelectedNookSlug) return
       const searchLoc = selectedSearchLocationRef.current
       if (mapSyncModeRef.current === 'search' && searchLoc) {
         if (isRadiusActive) {
@@ -1686,7 +1723,7 @@ export function DiscoveryMap({
         }
       }
     }
-  }, [getCurrentViewportHeight, isPassportOpen, stopPassportRotation, clearPassportMarkers, showNearbyMarkers, fitToCircle, isRadiusActive, resolveNearbyRestoreTarget])
+  }, [getCurrentViewportHeight, isPassportOpen, urlSelectedNookSlug, stopPassportRotation, clearPassportMarkers, showNearbyMarkers, fitToCircle, isRadiusActive, resolveNearbyRestoreTarget])
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return
@@ -1697,8 +1734,14 @@ export function DiscoveryMap({
     const searchBootCenter: [number, number] | null = bootSearchLocation
       ? [bootSearchLocation.lng, bootSearchLocation.lat]
       : null
-    const startCenter = routeBootCenter ?? searchBootCenter ?? nearbyBaseCenter
-    const startZoom = routeBootCenter ? 15 : (searchBootCenter || cachedCenter ? 14 : 10)
+    const initialDetail = useNookStore.getState().selectedNook
+    const detailBootCenter: [number, number] | null = initialDetail
+      ? [initialDetail.lng, initialDetail.lat]
+      : null
+    const startCenter = detailBootCenter ?? searchBootCenter ?? nearbyBaseCenter
+    const startZoom = detailBootCenter
+      ? 15
+      : searchBootCenter || cachedCenter ? 14 : 10
     initialCenterRef.current = nearbyBaseCenter
 
     const root = document.documentElement
@@ -1767,7 +1810,11 @@ export function DiscoveryMap({
         [coords[1], coords[0]]
       ) > 200
 
-      if (movedSignificantly && mapSyncModeRef.current === 'nearby') {
+      if (
+        movedSignificantly &&
+        mapSyncModeRef.current === 'nearby' &&
+        !useNookStore.getState().selectedNook
+      ) {
         map.flyTo({ center: coords, zoom: 14, duration: 1500 })
         void loadNearbyPlaces(coords, 'all', { mapTarget: 'nearby', updateMap: true })
       }
@@ -1990,6 +2037,7 @@ export function DiscoveryMap({
       nearbyOriginRef.current = nearbyBaseCenter
       setNearbyOrigin(nearbyBaseCenter)
       const activeSearchLocation = selectedSearchLocationRef.current
+      const currentDetail = useNookStore.getState().selectedNook
       if (activeSearchLocation && isSearchRouteActive()) {
         void loadSearchedPlaces(activeSearchLocation, 'all', {
           forceMapUpdate: true,
@@ -1997,11 +2045,45 @@ export function DiscoveryMap({
           updateMap: true,
         })
       } else {
-        void loadNearbyPlaces(startCenter, 'all', { mapTarget: 'nearby', updateMap: true })
+        const fetchCenter: [number, number] = currentDetail
+          ? [currentDetail.lng, currentDetail.lat]
+          : nearbyBaseCenter
+        void loadNearbyPlaces(fetchCenter, 'all', { mapTarget: 'nearby', updateMap: true })
+      }
+
+      if (currentDetail && !activeSearchLocation) {
+        const center = map.getCenter()
+        const offBy = Math.abs(center.lng - currentDetail.lng) > 0.01 ||
+          Math.abs(center.lat - currentDetail.lat) > 0.01
+        if (offBy) {
+          map.jumpTo({ center: [currentDetail.lng, currentDetail.lat], zoom: 15 })
+        }
+        selectedIdRef.current = currentDetail.id
+        setSelectedId(currentDetail.id)
       }
 
       if (activeSearchLocation && isSearchRouteActive()) {
         geolocateIsAutoTriggerRef.current = false
+      } else if (currentDetail) {
+        // GeolocateControl.trigger() flies the camera; on a detail route we
+        // need the user's coords without the side-effect.
+        geolocateIsAutoTriggerRef.current = false
+        if (typeof navigator !== 'undefined' && navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              const coords: [number, number] = [pos.coords.longitude, pos.coords.latitude]
+              try {
+                localStorage.setItem('nook_loc', JSON.stringify({ lng: coords[0], lat: coords[1], ts: Date.now() }))
+              } catch {}
+              realUserLocRef.current = coords
+              nearbyOriginRef.current = coords
+              setRealUserLoc(coords)
+              setNearbyOrigin(coords)
+            },
+            () => {},
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
+          )
+        }
       } else {
         geolocateIsAutoTriggerRef.current = true
         geolocate.trigger()
@@ -2023,7 +2105,7 @@ export function DiscoveryMap({
       mapRef.current = null
       mapLoadedRef.current = false
     }
-  }, [handleSelectNook, isSearchRouteActive, loadNearbyPlaces, loadSearchedPlaces, routeBootCenter])
+  }, [handleSelectNook, isSearchRouteActive, loadNearbyPlaces, loadSearchedPlaces])
 
   useEffect(() => {
     nooksRef.current = mapNooks
@@ -2044,11 +2126,54 @@ export function DiscoveryMap({
   }, [syncSelectedNookFromUrl, urlSelectedNookSlug])
 
   useEffect(() => {
+    prevDetailSlugRef.current = urlSelectedNookSlug
+  }, [urlSelectedNookSlug])
+
+  useEffect(() => {
     selectedIdRef.current = selectedId
     pointMarkersRef.current.forEach((marker, id) => {
       setMarkerColor(marker, id === selectedId ? darkerPrimaryRef.current : primaryColorRef.current)
     })
   }, [selectedId])
+
+  useEffect(() => {
+    if (!mapLoadedRef.current) return
+    const map = mapRef.current
+    const nook = detailNook
+    if (!nook) {
+      if (selectedIdRef.current) {
+        const prev = pointMarkersRef.current.get(selectedIdRef.current)
+        if (prev) setMarkerColor(prev, primaryColorRef.current)
+      }
+      selectedIdRef.current = null
+      setSelectedId(null)
+      return
+    }
+    if (selectedIdRef.current !== nook.id) {
+      if (selectedIdRef.current) {
+        const prev = pointMarkersRef.current.get(selectedIdRef.current)
+        if (prev) setMarkerColor(prev, primaryColorRef.current)
+      }
+      selectedIdRef.current = nook.id
+      setSelectedId(nook.id)
+      const marker = pointMarkersRef.current.get(nook.id)
+      if (marker) setMarkerColor(marker, darkerPrimaryRef.current)
+      if (map) {
+        const currentZoom = map.getZoom()
+        const zoomDelta = Math.abs(15 - currentZoom)
+        const duration = zoomDelta > 4 ? 1800 : 900
+        map.flyTo({ center: [nook.lng, nook.lat], zoom: 15, duration, essential: true })
+      }
+    }
+    const known = nooksRef.current.some(n => n.id === nook.id)
+    if (!known && !isSearchRouteActive()) {
+      void loadNearbyPlaces([nook.lng, nook.lat], filter, {
+        forceMapUpdate: true,
+        mapTarget: 'nearby',
+        updateMap: true,
+      })
+    }
+  }, [detailNook, filter, isSearchRouteActive, loadNearbyPlaces])
 
   const isFirstFilterRender = useRef(true)
   useEffect(() => {
@@ -2058,9 +2183,12 @@ export function DiscoveryMap({
     }
 
     const currentSelectedSearchLocation = selectedSearchLocationRef.current
-    if (!isSearchRouteActive()) {
-      const currentNearbyOrigin = nearbyOriginRef.current ?? initialCenterRef.current
-      void loadNearbyPlaces(currentNearbyOrigin, filter, { mapTarget: 'nearby', updateMap: true })
+    if (!isSearchRouteActive() && !useNookStore.getState().selectedNook) {
+      void loadNearbyPlaces(
+        nearbyOriginRef.current ?? initialCenterRef.current,
+        filter,
+        { mapTarget: 'nearby', updateMap: true },
+      )
     }
 
     if (currentSelectedSearchLocation) {
@@ -2129,7 +2257,7 @@ export function DiscoveryMap({
     if (!isRadiusActive) return
 
     const timer = setTimeout(() => {
-      if (!isSearchRouteActive()) {
+      if (!isSearchRouteActive() && !useNookStore.getState().selectedNook) {
         const origin = nearbyOriginRef.current ?? initialCenterRef.current
         void loadNearbyPlaces(origin, filter, {
           mapTarget: 'nearby',
@@ -2406,30 +2534,26 @@ export function DiscoveryMap({
             )}
           </div>
 
-          {!isPassportOpen && (detailNook || showSearchResultsPanel) && (
+          {!isPassportOpen && !detailNook && showSearchResultsPanel && selectedSearchLocation && (
             <div
               className="absolute top-[72px] left-4 z-20 w-[300px] flex flex-col rounded-2xl bg-background/95 backdrop-blur-sm shadow-lg border border-border overflow-hidden"
               style={{ bottom: searchPanelBottom }}
             >
-              {detailNook ? (
-                <NookDetailPanel nook={detailNook} onClose={handlePanelClose} />
-              ) : showSearchResultsPanel && selectedSearchLocation ? (
-                <PlacesPanel
-                  title={`nooks near ${selectedSearchLocation.name}`}
-                  loading={searchedLoading}
-                  seeding={searchedSeeding}
-                  places={searchedNooks}
-                  distanceOrigin={[selectedSearchLocation.lng, selectedSearchLocation.lat]}
-                  selectedId={selectedId}
-                  useMiles={useMiles}
-                  radiusM={radiusM}
-                  isRadiusActive={isRadiusActive}
-                  onToggleUnit={() => setUseMiles(value => !value)}
-                  onToggleRadius={handleToggleRadius}
-                  onRadiusChange={handleRadiusChange}
-                  onSelectNook={handleSelectNook}
-                />
-              ) : null}
+              <PlacesPanel
+                title={`nooks near ${selectedSearchLocation.name}`}
+                loading={searchedLoading}
+                seeding={searchedSeeding}
+                places={searchedNooks}
+                distanceOrigin={[selectedSearchLocation.lng, selectedSearchLocation.lat]}
+                selectedId={selectedId}
+                useMiles={useMiles}
+                radiusM={radiusM}
+                isRadiusActive={isRadiusActive}
+                onToggleUnit={() => setUseMiles(value => !value)}
+                onToggleRadius={handleToggleRadius}
+                onRadiusChange={handleRadiusChange}
+                onSelectNook={handleSelectNook}
+              />
             </div>
           )}
 
@@ -2447,6 +2571,15 @@ export function DiscoveryMap({
                 onClose={handlePassportClose}
                 onStampsLoaded={handlePassportStampsLoaded}
               />
+            </div>
+          )}
+
+          {!isPassportOpen && detailNook && (
+            <div
+              className="absolute top-[72px] left-4 z-20 w-[300px] flex flex-col rounded-2xl bg-background/95 backdrop-blur-sm shadow-lg border border-border overflow-hidden"
+              style={{ bottom: '24px' }}
+            >
+              <NookDetailPanel nook={detailNook} onClose={handlePanelClose} />
             </div>
           )}
         </>
