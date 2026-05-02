@@ -97,6 +97,8 @@ export function AuthControls({ variant, showPassport = true, passportIcon = fals
   const trimmedEmail = email.trim();
   const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail);
 
+  const lastUserIdRef = useRef<string | null | undefined>(undefined);
+
   useEffect(() => {
     let isMounted = true;
 
@@ -111,6 +113,7 @@ export function AuthControls({ variant, showPassport = true, passportIcon = fals
 
       setUser(data.user);
       setIdentities(data.user?.identities ?? []);
+      lastUserIdRef.current = data.user?.id ?? null;
     };
 
     void loadUser();
@@ -133,7 +136,12 @@ export function AuthControls({ variant, showPassport = true, passportIcon = fals
           void loadUser();
         }
 
-        router.refresh();
+        const nextUserId = session?.user?.id ?? null;
+        const previousUserId = lastUserIdRef.current;
+        lastUserIdRef.current = nextUserId;
+        if (previousUserId !== undefined && previousUserId !== nextUserId) {
+          router.refresh();
+        }
       }
     );
 

@@ -13,6 +13,18 @@ export function getMobileHalfVisibleHeight(viewportHeight: number): number {
   return viewportHeight * HALF_VISIBLE_RATIO
 }
 
+export function getMobileSheetVisibleHeight(
+  snap: SnapPoint,
+  viewportHeight: number,
+  headerH: number = HEADER_H,
+): number {
+  switch (snap) {
+    case 'peek': return PEEK_H
+    case 'half': return getMobileHalfVisibleHeight(viewportHeight)
+    case 'full': return Math.max(viewportHeight - headerH, 0)
+  }
+}
+
 const SNAP_ORDER: SnapPoint[] = ['peek', 'half', 'full']
 const FLING_THRESHOLD = 0.5
 
